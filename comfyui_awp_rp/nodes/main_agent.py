@@ -66,6 +66,11 @@ class AWPMainAgent:
                 ),
                 "record_session": ("BOOLEAN", {"default": True}),
                 "worldbook_context": ("STRING", {"default": "", "forceInput": True}),
+                "card_id": ("STRING", {
+                    "default": "",
+                    "placeholder": "角色卡ID（自动加载世界书并智能过滤：常开条目+关键词匹配）",
+                    "label": "角色卡",
+                }),
                 "memory_context": ("STRING", {"default": "", "forceInput": True}),
                 "preset_id": ("STRING", {"default": "rp-default-v1"}),
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 2.0, "step": 0.1}),
@@ -116,6 +121,7 @@ class AWPMainAgent:
         context_mode: str = "full_context",
         record_session: bool = True,
         worldbook_context: str = "",
+        card_id: str = "",
         memory_context: str = "",
         preset_id: str = "rp-default-v1",
         temperature: float = 0.8,
@@ -217,8 +223,40 @@ class AWPMainAgent:
 
         # Add context (worldbook, memory, history) based on context_mode
         context_parts: list[str] = []
-        if context_mode in ("full_context", "no_memory") and worldbook_context:
-            context_parts.append(f"## World & Character Lore\n{worldbook_context}")
+
+        # --- Smart worldbook: filter by ST rules when card_id is provided ---
+        resolved_worldbook = worldbook_context
+        if card_id and context_mode in ("full_context", "no_memory"):
+            try:
+                from ..card.import_card import CardImporter
+                from ..knowledge.worldbook import build_filtered_worldbook_text
+                importer = CardImporter()
+                card = importer.get_card(card_id)
+                if card and card.get("worldbook"):
+                    history_text = ""
+                    if history_turns:
+                        history_text = " ".join(
+                            (t.input or "") + " " + (t.assistant_output or "")
+                            for t in history_turns[-3:]
+                        )
+                    filtered_wb = build_filtered_worldbook_text(
+                        entries=card["worldbook"],
+                        user_input=user_input,
+                        history_text=history_text,
+                    )
+                    if filtered_wb:
+                        resolved_worldbook = filtered_wb
+                        if worldbook_context:
+                            resolved_worldbook = (
+                                resolved_worldbook
+                                + "\n\n## Additional Context\n"
+                                + worldbook_context
+                            )
+            except Exception:
+                pass  # Fall through to use raw worldbook_context
+
+        if resolved_worldbook:
+            context_parts.append(resolved_worldbook)
 
         if context_mode == "full_context" and memory_context:
             context_parts.append(f"## Long-term Memories\n{memory_context}")
