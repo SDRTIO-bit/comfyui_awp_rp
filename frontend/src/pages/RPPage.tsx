@@ -95,15 +95,27 @@ export default function RPPage() {
         fetch(url).then(r => r.json()).then(data => [key, data] as const)
       )
     )
+    let cardId = initialState.activeCardId
+    let sessionId = initialState.activeSessionId
     for (const r of results) {
       if (r.status === 'fulfilled') {
-        dispatch({ type: 'SET_DATA', key: r.value[0], data: r.value[1] })
+        const [key, data] = r.value
+        dispatch({ type: 'SET_DATA', key, data })
+        // Use first real card/session ID from API response
+        if (key === 'cards' && Array.isArray(data) && data.length > 0) {
+          cardId = data[0].card_id
+          dispatch({ type: 'SET_DATA', key: 'activeCardId', data: cardId })
+        }
+        if (key === 'sessions' && Array.isArray(data) && data.length > 0) {
+          sessionId = data[0].session_id
+          dispatch({ type: 'SET_DATA', key: 'activeSessionId', data: sessionId })
+        }
       }
     }
 
     // Load worldbook for active card
     try {
-      const wb = await fetch(`/api/worldbook/${initialState.activeCardId}`).then(r => r.json())
+      const wb = await fetch(`/api/worldbook/${cardId}`).then(r => r.json())
       dispatch({ type: 'SET_DATA', key: 'worldbookEntries', data: wb })
     } catch { /* no worldbook yet */ }
 
