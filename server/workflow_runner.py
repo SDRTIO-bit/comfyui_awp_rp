@@ -642,67 +642,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(Path(__file__).parent / "static"), **kwargs)
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/api/workflows":
-            self._json(list_workflows())
-            return
-        if parsed.path == "/api/health":
-            self._json({"status": "ok", "comfyui": COMFYUI_URL})
-            return
-        super().do_GET()
-
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
-        try:
-            data = json.loads(body)
-        except json.JSONDecodeError:
-            data = {}
-
-        if parsed.path == "/api/run":
-            self._handle_run(data)
-        else:
-            self._json({"error": "not found"}, 404)
-
-    def _handle_run(self, data: dict):
-        filename = data.get("workflow", "")
-        input_values = data.get("inputs", {})
-
-        wf = load_workflow(filename)
-        if not wf:
-            self._json({"ok": False, "error": f"Workflow not found: {filename}"})
-            return
-
-        try:
-            wf = inject_inputs(wf, input_values)
-            prompt = convert_to_api_format(wf)
-            result = call_comfyui(prompt)
-            self._json(result)
-        except Exception as e:
-            self._json({"ok": False, "error": str(e)})
-
-    def _json(self, data: dict, code: int = 200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-
 if __name__ == "__main__":
     print(f"\n  Workflow Runner Bridge")
     print(f"  Frontend: http://localhost:{PORT}")
