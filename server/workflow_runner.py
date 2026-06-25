@@ -646,6 +646,22 @@ if __name__ == "__main__":
     print(f"\n  Workflow Runner Bridge")
     print(f"  Frontend: http://localhost:{PORT}")
     print(f"  ComfyUI:  {COMFYUI_URL}")
+
+    # Pre-import all modules to avoid import deadlocks in threaded handler
+    print(f"  Pre-loading modules...")
+    _ensure_import_path()
+    try:
+        from comfyui_awp_rp.card.import_card import CardImporter
+        from comfyui_awp_rp.memory.short_term import AgentSessionManager
+        from comfyui_awp_rp.preset.preset import PresetManager
+        from comfyui_awp_rp.core.config import get_config
+        from comfyui_awp_rp.nodes import NODE_CLASS_MAPPINGS
+        CardImporter().list_cards()  # warm SQLite connection
+        print(f"  Modules loaded OK")
+    except Exception as e:
+        print(f"  Module pre-load FAILED: {e}")
+        print(f"  Some API endpoints may fail on first request")
+
     print(f"  Ctrl+C to stop\n")
     server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
