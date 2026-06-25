@@ -1,0 +1,527 @@
+{
+  "1": {
+    "inputs": {
+      "text": "I step into the ruined Moon Shrine, lower my voice, and ask Erin why the Moon Gate is humming again."
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "RP User Input"}
+  },
+  "2": {
+    "inputs": {
+      "text": "rp-full-coverage-session"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "Session ID"}
+  },
+  "3": {
+    "inputs": {
+      "json_text": "{\"scene\":{\"location\":\"Moon Shrine\",\"time\":\"midnight\",\"active_hooks\":\"Moon Gate, River Oath\"},\"player\":{\"stance\":\"cautious\"},\"Erin\":{\"trust\":42,\"mood\":\"guarded\"}}",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "Current MVU Variables"}
+  },
+  "4": {
+    "inputs": {
+      "json_text": "[{\"id\":\"wb_moon_gate\",\"keyword\":\"Moon Gate\",\"title\":\"Moon Gate\",\"content\":\"A sealed stone gate beneath the shrine. It hums when old vows are disturbed.\",\"one_liner\":\"A sealed gate that answers disturbed vows.\",\"tags\":[\"Moon Gate\",\"shrine\",\"lore\"],\"type\":\"lore\",\"priority\":90},{\"id\":\"wb_river_oath\",\"keyword\":\"River Oath\",\"title\":\"River Oath\",\"content\":\"A binding promise witnessed by the black river. Breaking it wakes the gate keeper.\",\"one_liner\":\"A vow that can wake the gate keeper.\",\"tags\":[\"River Oath\",\"vow\"],\"type\":\"lore\",\"priority\":80},{\"id\":\"wb_erin\",\"keyword\":\"Erin\",\"title\":\"Erin Vale\",\"content\":\"Erin is a careful shrine investigator. She hides fear behind practical questions and never trusts sudden miracles.\",\"one_liner\":\"A guarded investigator who asks practical questions first.\",\"tags\":[\"Erin\",\"character\"],\"type\":\"character\",\"priority\":95}]",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "Worldbook Index"}
+  },
+  "5": {
+    "inputs": {
+      "json_text": "[{\"id\":\"mem_first_visit\",\"title\":\"First visit\",\"content\":\"The player promised Erin not to touch the shrine bell until she finished reading the floor seals.\",\"type\":\"commitment\",\"tags\":[\"Erin\",\"shrine\"],\"importance\":0.8}]",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "Seed Memory Context"}
+  },
+  "6": {
+    "inputs": {
+      "text": "Keep player agency strict. Do not decide the player's next action. End with three RP action options."
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "Author's Note"}
+  },
+  "7": {
+    "inputs": {
+      "text": "Erin speaks in short, practical sentences when afraid. She notices physical evidence before discussing feelings."
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "Character Note"}
+  },
+  "8": {
+    "inputs": {
+      "json_text": "[{\"source_path\":\"scene.active_hooks\",\"split_pattern\":\"[,\\\\n]+\",\"prefix\":\"\"}]",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "Injection Rules"}
+  },
+  "9": {
+    "inputs": {
+      "json_text": "{\"location\":\"Moon Shrine\",\"time\":\"midnight\",\"weather\":\"cold rain\",\"activeCharacters\":[\"player\",\"Erin Vale\"],\"sceneGoal\":\"Investigate why the Moon Gate started humming.\"}",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "Scene State"}
+  },
+  "10": {
+    "inputs": {
+      "text": "rp_full_coverage_project"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "Project ID"}
+  },
+  "11": {
+    "inputs": {
+      "text": "{\"spec\":\"chara_card_v3\",\"data\":{\"name\":\"Erin Vale\",\"description\":\"A careful shrine investigator who hides fear behind practical questions.\",\"first_mes\":\"Rain taps against the shrine roof. Erin looks up from the floor seal and says, \\\"Do not touch the bell yet. The gate is listening.\\\"\",\"alternate_greetings\":[\"Erin wipes rain from her sleeve and nods toward the Moon Gate. \\\"If it hums again, step back first. Ask questions second.\\\"\"],\"tags\":[\"mystery\",\"shrine\"],\"character_book\":{\"entries\":[{\"keys\":[\"Erin\",\"Moon Gate\"],\"content\":\"Erin knows the Moon Gate reacts to broken vows, but she has never seen it open.\",\"comment\":\"Erin and Moon Gate\",\"enabled\":true,\"constant\":false,\"selective\":true}]}}}"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "Sample Character Card JSON"}
+  },
+  "12": {
+    "inputs": {
+      "card_json": ["11", 0],
+      "card_path": ""
+    },
+    "class_type": "AWPCardImport",
+    "_meta": {"title": "Import Sample Card"}
+  },
+  "13": {
+    "inputs": {
+      "card_id": ["12", 0]
+    },
+    "class_type": "AWPCardSelect",
+    "_meta": {"title": "Select Imported Card"}
+  },
+  "14": {
+    "inputs": {
+      "card_id": ["12", 0],
+      "mode": "select",
+      "greeting_id": ""
+    },
+    "class_type": "AWPGreeting",
+    "_meta": {"title": "Greeting"}
+  },
+  "15": {
+    "inputs": {
+      "worldbook_json": ["13", 2],
+      "enabled_only": false,
+      "limit": 50
+    },
+    "class_type": "AWPWorldbookList",
+    "_meta": {"title": "Card Worldbook List"}
+  },
+  "16": {
+    "inputs": {
+      "query": ["1", 0],
+      "documents_json": ["4", 0],
+      "strategy": "hybrid",
+      "limit": 8,
+      "min_score": 0.01,
+      "filter_tags": "",
+      "filter_type": "",
+      "vector_persist_dir": ""
+    },
+    "class_type": "AWPRetriever",
+    "_meta": {"title": "Worldbook Retrieval"}
+  },
+  "17": {
+    "inputs": {
+      "user_input": ["1", 0],
+      "session_id": ["2", 0],
+      "current_variables": ["3", 0],
+      "worldbook_index": ["4", 0],
+      "memory_context": ["30", 1],
+      "var_diff": "{}",
+      "authors_note": ["6", 0],
+      "character_note": ["7", 0],
+      "injection_rules_json": ["8", 0],
+      "project_root": "",
+      "chapter_num": 0,
+      "story_genre": "",
+      "target_tokens": 4000,
+      "top_worldbook": 4
+    },
+    "class_type": "AWPRoundPreparer",
+    "_meta": {"title": "Round Preparer"}
+  },
+  "18": {
+    "inputs": {
+      "user_input": ["17", 0],
+      "session_id": ["2", 0],
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "profile": "rp-writer",
+      "context_mode": "full_context",
+      "record_session": true,
+      "worldbook_context": ["17", 1],
+      "memory_context": ["30", 1],
+      "preset_id": "rp-default-v1",
+      "temperature": 0.85,
+      "max_tokens": 2048,
+      "enable_agent_loop": true,
+      "max_iterations": 5,
+      "tool_ids": "memory_read,worldbook_search,retrieval_search,card_get,continuity_check,npc_activity_scan,story_plan_check,get_injection_keywords,resolve_injections,delegate_to_sub_agent",
+      "skill_ids": "rp_thinking_flow,hard_gates_full",
+      "current_variables": ["3", 0]
+    },
+    "class_type": "AWPMainAgent",
+    "_meta": {"title": "Main RP Agent"}
+  },
+  "19": {
+    "inputs": {
+      "ai_response": ["18", 0],
+      "current_variables": ["3", 0],
+      "worldbook_index": ["4", 0],
+      "enable_worldbook_match": true,
+      "enable_validation": true,
+      "top_n_matches": 4
+    },
+    "class_type": "AWPMVUNode",
+    "_meta": {"title": "MVU Update"}
+  },
+  "20": {
+    "inputs": {
+      "text": ["28", 0],
+      "variables": ["19", 0]
+    },
+    "class_type": "AWPMVUMacroResolver",
+    "_meta": {"title": "Resolve Output Macros"}
+  },
+  "21": {
+    "inputs": {
+      "user_input": ["1", 0],
+      "known_entities_json": "[{\"entityId\":\"char_erin\",\"name\":\"Erin Vale\",\"aliases\":[\"Erin\"],\"category\":\"character\"}]"
+    },
+    "class_type": "AWPInputParser",
+    "_meta": {"title": "Input Parser"}
+  },
+  "22": {
+    "inputs": {
+      "preset_id": "rp-default-v1"
+    },
+    "class_type": "AWPPreset",
+    "_meta": {"title": "RP Preset"}
+  },
+  "23": {
+    "inputs": {
+      "parsed_input_json": ["21", 0],
+      "character_profile_json": ["13", 1],
+      "scene_state_json": ["9", 0],
+      "worldbook_context_json": ["16", 1],
+      "memory_context_json": ["30", 1],
+      "preset_sections_json": ["22", 1],
+      "target_tokens": 3000
+    },
+    "class_type": "AWPContextAssembler",
+    "_meta": {"title": "Direct Pipeline Context"}
+  },
+  "24": {
+    "inputs": {
+      "context_bundle_json": ["23", 1],
+      "session_id": ["2", 0],
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "profile": "rp-writer",
+      "preset_id": "rp-default-v1",
+      "context_mode": "full_context",
+      "reply_rules": "Dry-run preview only. Real RP output comes from Main RP Agent.",
+      "temperature": 0.8,
+      "max_tokens": 1024,
+      "dry_run": true
+    },
+    "class_type": "AWPDialogueDirector",
+    "_meta": {"title": "Direct Pipeline Dry Run"}
+  },
+  "25": {
+    "inputs": {
+      "reply": ["18", 0],
+      "critic_review_json": ""
+    },
+    "class_type": "AWPQualityGate",
+    "_meta": {"title": "Quality Gate"}
+  },
+  "26": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "parsed_input_json": ["21", 0],
+      "reply": ["18", 0],
+      "character_id": ["13", 0],
+      "scene_id": "scene_moon_shrine"
+    },
+    "class_type": "AWPPatchProposal",
+    "_meta": {"title": "Patch Proposal"}
+  },
+  "27": {
+    "inputs": {
+      "quality_decision_json": ["25", 0],
+      "candidate_state_patch": ["26", 0],
+      "candidate_memory_patch": ["26", 1],
+      "allow_commit_when_accepted": false
+    },
+    "class_type": "AWPSideEffectDecision",
+    "_meta": {"title": "Side Effect Decision"}
+  },
+  "28": {
+    "inputs": {
+      "reply": ["18", 0],
+      "context_bundle_json": ["23", 1],
+      "candidate_state_patch": ["26", 0],
+      "candidate_memory_patch": ["26", 1],
+      "quality_decision_json": ["25", 0],
+      "side_effect_decision_json": ["27", 0]
+    },
+    "class_type": "AWPOutputRenderer",
+    "_meta": {"title": "Final RP Output"}
+  },
+  "29": {
+    "inputs": {
+      "namespace": ["2", 0],
+      "content": "Seed memory: Erin warned the player not to touch the shrine bell before reading the seal.",
+      "title": "Moon Shrine warning",
+      "memory_type": "commitment",
+      "tags": "Erin,shrine",
+      "entity_ids": "char_erin",
+      "importance": 0.7
+    },
+    "class_type": "AWPMemoryWrite",
+    "_meta": {"title": "Seed Memory Write"}
+  },
+  "30": {
+    "inputs": {
+      "namespace": ["2", 0],
+      "tags_any": "",
+      "type_filter": "",
+      "limit": 10
+    },
+    "class_type": "AWPMemoryRead",
+    "_meta": {"title": "Memory Read"}
+  },
+  "31": {
+    "inputs": {
+      "namespace": ["2", 0],
+      "tags_any": "",
+      "type_filter": "",
+      "limit": 20
+    },
+    "class_type": "AWPMemoryList",
+    "_meta": {"title": "Memory List"}
+  },
+  "32": {
+    "inputs": {
+      "namespace": ["2", 0],
+      "operation": "update",
+      "memory_id": "nonexistent-memory-id",
+      "content": "",
+      "title": "",
+      "tags": "",
+      "importance": 0.5
+    },
+    "class_type": "AWPMemoryEdit",
+    "_meta": {"title": "Memory Edit Safe Probe"}
+  },
+  "33": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "resource_ref": "main",
+      "operation": "query",
+      "entry_id": "",
+      "content": "",
+      "title": "",
+      "tags": "",
+      "priority": 0.0,
+      "activation": "关键词触发",
+      "query_tags": "",
+      "limit": 20
+    },
+    "class_type": "AWPWorldbook",
+    "_meta": {"title": "Session Worldbook Query"}
+  },
+  "34": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "include_history": true
+    },
+    "class_type": "AWPSessionLoad",
+    "_meta": {"title": "Session Load"}
+  },
+  "35": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "summary": ["28", 0],
+      "clear_session": false
+    },
+    "class_type": "AWPSessionSave",
+    "_meta": {"title": "Session Save Summary"}
+  },
+  "36": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "operation": "reroll_last",
+      "from_index": 0
+    },
+    "class_type": "AWPSessionReroll",
+    "_meta": {"title": "Session Reroll Utility"}
+  },
+  "37": {
+    "inputs": {
+      "project_id": ["10", 0],
+      "name": "Full Coverage RP Demo",
+      "project_type": "rp",
+      "snapshot_type": "turn",
+      "narrative": ["28", 0],
+      "context_json": ["23", 1],
+      "quality_json": ["25", 0],
+      "memory_candidates_json": ["26", 1]
+    },
+    "class_type": "AWPProjectSave",
+    "_meta": {"title": "Project Save Snapshot"}
+  },
+  "38": {
+    "inputs": {
+      "project_id": ["10", 0],
+      "snapshot_id": ""
+    },
+    "class_type": "AWPProjectLoad",
+    "_meta": {"title": "Project Load Latest"}
+  },
+  "39": {
+    "inputs": {
+      "project_type": "rp",
+      "snapshot_limit": 3
+    },
+    "class_type": "AWPProjectList",
+    "_meta": {"title": "Project List"}
+  },
+  "40": {
+    "inputs": {
+      "project_id": ["10", 0],
+      "operation": "list",
+      "node_id": "",
+      "node_type": "chapter",
+      "title": "",
+      "content": "",
+      "parent_id": "",
+      "order_index": 0,
+      "status": "planned"
+    },
+    "class_type": "AWPOutlineEditor",
+    "_meta": {"title": "Outline Editor List"}
+  },
+  "41": {
+    "inputs": {
+      "project_id": ["10", 0],
+      "node_type": "all",
+      "status": "all",
+      "parent_id": ""
+    },
+    "class_type": "AWPOutlineQuery",
+    "_meta": {"title": "Outline Query"}
+  },
+  "42": {
+    "inputs": {
+      "card_id": ["12", 0],
+      "operation": "view",
+      "manifest_json": "{}",
+      "greeting_id": "",
+      "greeting_content": "",
+      "greeting_label": ""
+    },
+    "class_type": "AWPCardEditor",
+    "_meta": {"title": "Card Editor View"}
+  },
+  "43": {
+    "inputs": {
+      "preset_id": "rp-default-v1",
+      "operation": "view",
+      "rule_section": "style",
+      "rule_id": "",
+      "rule_content": "",
+      "rule_priority": 50,
+      "contract_json": "{}"
+    },
+    "class_type": "AWPPresetEditor",
+    "_meta": {"title": "Preset Editor View"}
+  },
+  "44": {
+    "inputs": {
+      "operation": "list",
+      "skill_id": "",
+      "label_zh": "",
+      "label_en": "",
+      "content_zh": "",
+      "content_en": "",
+      "category": "",
+      "tags": ""
+    },
+    "class_type": "AWPSkillManagerNode",
+    "_meta": {"title": "Skill Manager List"}
+  },
+  "45": {
+    "inputs": {
+      "category": ""
+    },
+    "class_type": "AWPToolList",
+    "_meta": {"title": "Tool List"}
+  },
+  "46": {
+    "inputs": {
+      "task": "Review the RP reply for continuity and player agency.",
+      "profile": "rp-critic",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "context": ["28", 1],
+      "data": ["25", 0],
+      "temperature": 0.2,
+      "max_tokens": 1024
+    },
+    "class_type": "AWPSubAgent",
+    "_meta": {"title": "Optional Sub Agent Review"}
+  },
+  "47": {
+    "inputs": {
+      "text": ["20", 0],
+      "label": "final_rp_reply"
+    },
+    "class_type": "AWPTextOutput",
+    "_meta": {"title": "Final Reply Text"}
+  },
+  "48": {
+    "inputs": {
+      "json_text": ["28", 1],
+      "label": "final_output_json",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "Final Output JSON"}
+  },
+  "49": {
+    "inputs": {
+      "text": ["24", 0],
+      "label": "direct_pipeline_dry_run"
+    },
+    "class_type": "AWPTextOutput",
+    "_meta": {"title": "Direct Pipeline Preview"}
+  },
+  "50": {
+    "inputs": {
+      "json_text": ["18", 2],
+      "label": "main_agent_metadata",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "Main Agent Metadata"}
+  },
+  "51": {
+    "inputs": {
+      "json_text": ["19", 4],
+      "label": "mvu_audit",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "MVU Audit JSON"}
+  }
+}

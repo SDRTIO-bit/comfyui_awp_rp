@@ -1,0 +1,235 @@
+{
+  "last_node_id": 22,
+  "last_link_id": 28,
+  "nodes": [
+    {
+      "id": 1, "type": "AWPTextInput", "pos": [50, 100], "size": [320, 120],
+      "flags": {}, "order": 0, "mode": 0,
+      "outputs": [{"name": "文本", "type": "STRING", "links": [1, 2], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPTextInput"},
+      "widgets_values": ["我推开祠堂老旧的木门，门轴发出刺耳的吱呀声。祠堂里弥漫着檀香的气息，光线透过窗棂洒在牌位上。我看到一位年轻妇人正跪在蒲团上上香。"]
+    },
+    {
+      "id": 2, "type": "AWPTextInput", "pos": [50, 280], "size": [320, 80],
+      "flags": {}, "order": 1, "mode": 0,
+      "outputs": [{"name": "文本", "type": "STRING", "links": [3, 4, 5, 6, 7, 8], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPTextInput"},
+      "widgets_values": ["rp-session-001"]
+    },
+    {
+      "id": 3, "type": "AWPTextInput", "pos": [50, 420], "size": [320, 80],
+      "flags": {}, "order": 2, "mode": 0,
+      "outputs": [{"name": "文本", "type": "STRING", "links": [9], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPTextInput"},
+      "widgets_values": ["card_demo_001"]
+    },
+    {
+      "id": 4, "type": "AWPJsonInput", "pos": [50, 540], "size": [320, 150],
+      "flags": {}, "order": 3, "mode": 0,
+      "outputs": [{"name": "JSON文本", "type": "STRING", "links": [10], "slot_index": 0}, {"name": "状态", "type": "STRING", "links": [], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPJsonInput"},
+      "widgets_values": ["{\"location\":\"桃花村祠堂\",\"time\":\"午后\",\"weather\":\"阴天\",\"activeCharacters\":[\"player\"]}", true]
+    },
+    {
+      "id": 5, "type": "AWPPreset", "pos": [50, 730], "size": [320, 80],
+      "flags": {}, "order": 4, "mode": 0,
+      "outputs": [{"name": "预设ID", "type": "STRING", "links": [], "slot_index": 0}, {"name": "提示词片段", "type": "STRING", "links": [11], "slot_index": 1}, {"name": "模型配置", "type": "STRING", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPPreset"},
+      "widgets_values": ["long-narrative-v1"]
+    },
+    {
+      "id": 6, "type": "AWPSessionLoad", "pos": [420, 100], "size": [280, 100],
+      "flags": {}, "order": 5, "mode": 0,
+      "inputs": [{"name": "session_id", "type": "STRING", "link": 3}],
+      "outputs": [{"name": "会话ID", "type": "STRING", "links": [12], "slot_index": 0}, {"name": "会话上下文", "type": "STRING", "links": [], "slot_index": 1}, {"name": "轮次数", "type": "INT", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPSessionLoad"},
+      "widgets_values": ["rp-session-001", true]
+    },
+    {
+      "id": 7, "type": "AWPCardSelect", "pos": [420, 250], "size": [280, 100],
+      "flags": {}, "order": 6, "mode": 0,
+      "inputs": [{"name": "card_id", "type": "STRING", "link": 9}],
+      "outputs": [{"name": "角色卡ID", "type": "STRING", "links": [13], "slot_index": 0}, {"name": "角色卡数据", "type": "STRING", "links": [14], "slot_index": 1}, {"name": "世界书JSON", "type": "STRING", "links": [15, 16], "slot_index": 2}, {"name": "角色卡名称", "type": "STRING", "links": [], "slot_index": 3}, {"name": "角色卡引用", "type": "STRING", "links": [], "slot_index": 4}],
+      "properties": {"Node name for S&R": "AWPCardSelect"},
+      "widgets_values": ["card_demo_001"]
+    },
+    {
+      "id": 8, "type": "AWPGreeting", "pos": [420, 400], "size": [280, 120],
+      "flags": {}, "order": 7, "mode": 0,
+      "inputs": [{"name": "card_id", "type": "STRING", "link": 13}],
+      "outputs": [{"name": "开场白文本", "type": "STRING", "links": [], "slot_index": 0}, {"name": "开场白信息", "type": "STRING", "links": [], "slot_index": 1}, {"name": "开场白列表", "type": "STRING", "links": [17], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPGreeting"},
+      "widgets_values": ["list", ""]
+    },
+    {
+      "id": 9, "type": "AWPRetriever", "pos": [420, 560], "size": [280, 160],
+      "flags": {}, "order": 8, "mode": 0,
+      "inputs": [{"name": "query", "type": "STRING", "link": 1}, {"name": "documents_json", "type": "STRING", "link": 15}],
+      "outputs": [{"name": "结果文本", "type": "STRING", "links": [], "slot_index": 0}, {"name": "结果JSON", "type": "STRING", "links": [18], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPRetriever"},
+      "widgets_values": ["", "[]", "hybrid", 12, 0.01, "", ""]
+    },
+    {
+      "id": 10, "type": "AWPMemoryRead", "pos": [420, 760], "size": [280, 100],
+      "flags": {}, "order": 9, "mode": 0,
+      "inputs": [{"name": "namespace", "type": "STRING", "link": 4}],
+      "outputs": [{"name": "记忆文本", "type": "STRING", "links": [], "slot_index": 0}, {"name": "记忆JSON", "type": "STRING", "links": [19], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPMemoryRead"},
+      "widgets_values": ["", "", "", 10]
+    },
+    {
+      "id": 11, "type": "AWPInputParser", "pos": [750, 100], "size": [300, 140],
+      "flags": {}, "order": 10, "mode": 0,
+      "inputs": [{"name": "user_input", "type": "STRING", "link": 2}, {"name": "known_entities_json", "type": "STRING", "link": 16}],
+      "outputs": [{"name": "解析结果JSON", "type": "STRING", "links": [20, 21], "slot_index": 0}, {"name": "调试", "type": "STRING", "links": [], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPInputParser"},
+      "widgets_values": ["", "[]"]
+    },
+    {
+      "id": 12, "type": "AWPContextAssembler", "pos": [750, 290], "size": [350, 220],
+      "flags": {}, "order": 11, "mode": 0,
+      "inputs": [
+        {"name": "parsed_input_json", "type": "STRING", "link": 20},
+        {"name": "character_profile_json", "type": "STRING", "link": 14},
+        {"name": "scene_state_json", "type": "STRING", "link": 10},
+        {"name": "worldbook_context_json", "type": "STRING", "link": 18},
+        {"name": "memory_context_json", "type": "STRING", "link": 19},
+        {"name": "preset_sections_json", "type": "STRING", "link": 11}
+      ],
+      "outputs": [{"name": "上下文提示词", "type": "STRING", "links": [], "slot_index": 0}, {"name": "上下文包JSON", "type": "STRING", "links": [22, 23], "slot_index": 1}, {"name": "调试", "type": "STRING", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPContextAssembler"},
+      "widgets_values": ["{}", "{}", "{}", "[]", "[]", "[]", 6000]
+    },
+    {
+      "id": 13, "type": "AWPDialogueDirector", "pos": [750, 560], "size": [380, 280],
+      "flags": {}, "order": 12, "mode": 0,
+      "inputs": [{"name": "context_bundle_json", "type": "STRING", "link": 22}, {"name": "session_id", "type": "STRING", "link": 5}],
+      "outputs": [{"name": "回复", "type": "STRING", "links": [24, 25, 26], "slot_index": 0}, {"name": "候选状态补丁", "type": "STRING", "links": [], "slot_index": 1}, {"name": "候选记忆补丁", "type": "STRING", "links": [], "slot_index": 2}, {"name": "元数据", "type": "STRING", "links": [], "slot_index": 3}],
+      "properties": {"Node name for S&R": "AWPDialogueDirector"},
+      "widgets_values": ["{}", "rp-session-001", "deepseek", "deepseek-chat", "rp-writer", "long-narrative-v1", "full_context", "用第三人称「你」视角叙述。每次回复必须1200-1800字。", 0.85, 4096, false]
+    },
+    {
+      "id": 14, "type": "AWPQualityGate", "pos": [1180, 100], "size": [300, 120],
+      "flags": {}, "order": 13, "mode": 0,
+      "inputs": [{"name": "reply", "type": "STRING", "link": 24}, {"name": "critic_review_json", "type": "STRING", "link": null}],
+      "outputs": [{"name": "决策JSON", "type": "STRING", "links": [27, 28], "slot_index": 0}, {"name": "状态", "type": "STRING", "links": [], "slot_index": 1}, {"name": "修订指令", "type": "STRING", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPQualityGate"},
+      "widgets_values": ["", ""]
+    },
+    {
+      "id": 15, "type": "AWPPatchProposal", "pos": [1180, 270], "size": [300, 160],
+      "flags": {}, "order": 14, "mode": 0,
+      "inputs": [{"name": "session_id", "type": "STRING", "link": 6}, {"name": "parsed_input_json", "type": "STRING", "link": 21}, {"name": "reply", "type": "STRING", "link": 25}],
+      "outputs": [{"name": "候选状态补丁", "type": "STRING", "links": [], "slot_index": 0}, {"name": "候选记忆补丁", "type": "STRING", "links": [], "slot_index": 1}, {"name": "调试", "type": "STRING", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPPatchProposal"},
+      "widgets_values": ["rp-session-001", "{}", "", "", "scene-taohua-temple"]
+    },
+    {
+      "id": 16, "type": "AWPSideEffectDecision", "pos": [1180, 470], "size": [300, 130],
+      "flags": {}, "order": 15, "mode": 0,
+      "inputs": [{"name": "quality_decision_json", "type": "STRING", "link": 27}, {"name": "candidate_state_patch", "type": "STRING", "link": null}, {"name": "candidate_memory_patch", "type": "STRING", "link": null}],
+      "outputs": [{"name": "决策JSON", "type": "STRING", "links": [], "slot_index": 0}, {"name": "状态", "type": "STRING", "links": [], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPSideEffectDecision"},
+      "widgets_values": ["{}", "{}", "{}", false]
+    },
+    {
+      "id": 17, "type": "AWPOutputRenderer", "pos": [1180, 640], "size": [300, 200],
+      "flags": {}, "order": 16, "mode": 0,
+      "inputs": [
+        {"name": "reply", "type": "STRING", "link": 26},
+        {"name": "context_bundle_json", "type": "STRING", "link": 23},
+        {"name": "candidate_state_patch", "type": "STRING", "link": null},
+        {"name": "candidate_memory_patch", "type": "STRING", "link": null},
+        {"name": "quality_decision_json", "type": "STRING", "link": 28},
+        {"name": "side_effect_decision_json", "type": "STRING", "link": null}
+      ],
+      "outputs": [{"name": "最终回复", "type": "STRING", "links": [29], "slot_index": 0}, {"name": "最终输出JSON", "type": "STRING", "links": [30], "slot_index": 1}, {"name": "调试日志", "type": "STRING", "links": [], "slot_index": 2}],
+      "properties": {"Node name for S&R": "AWPOutputRenderer"},
+      "widgets_values": ["", "{}", "{}", "{}", "{}", "{}"]
+    },
+    {
+      "id": 18, "type": "AWPTextOutput", "pos": [1530, 100], "size": [300, 100],
+      "flags": {}, "order": 17, "mode": 0,
+      "inputs": [{"name": "text", "type": "STRING", "link": 29}],
+      "outputs": [{"name": "文本", "type": "STRING", "links": [], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPTextOutput"},
+      "widgets_values": ["最终回复"]
+    },
+    {
+      "id": 19, "type": "AWPJsonOutput", "pos": [1530, 240], "size": [300, 120],
+      "flags": {}, "order": 18, "mode": 0,
+      "inputs": [{"name": "json_text", "type": "STRING", "link": 30}],
+      "outputs": [{"name": "JSON文本", "type": "STRING", "links": [], "slot_index": 0}, {"name": "状态", "type": "STRING", "links": [], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPJsonOutput"},
+      "widgets_values": ["最终输出", true]
+    },
+    {
+      "id": 20, "type": "AWPProjectSave", "pos": [1530, 400], "size": [300, 140],
+      "flags": {}, "order": 19, "mode": 0,
+      "inputs": [{"name": "project_id", "type": "STRING", "link": 7}, {"name": "narrative", "type": "STRING", "link": 29}, {"name": "context_json", "type": "STRING", "link": null}, {"name": "quality_json", "type": "STRING", "link": 28}, {"name": "memory_candidates_json", "type": "STRING", "link": null}],
+      "outputs": [{"name": "快照ID", "type": "STRING", "links": [], "slot_index": 0}, {"name": "状态", "type": "STRING", "links": [], "slot_index": 1}],
+      "properties": {"Node name for S&R": "AWPProjectSave"},
+      "widgets_values": ["桃花村RP", "rp", "turn"]
+    },
+    {
+      "id": 21, "type": "AWPTextOutput", "pos": [1530, 580], "size": [300, 100],
+      "flags": {}, "order": 20, "mode": 0,
+      "inputs": [{"name": "text", "type": "STRING", "link": 17}],
+      "outputs": [{"name": "文本", "type": "STRING", "links": [], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPTextOutput"},
+      "widgets_values": ["开场白列表"]
+    },
+    {
+      "id": 22, "type": "AWPSessionSave", "pos": [1530, 720], "size": [300, 100],
+      "flags": {}, "order": 21, "mode": 0,
+      "inputs": [{"name": "session_id", "type": "STRING", "link": 12}, {"name": "summary", "type": "STRING", "link": 29}],
+      "outputs": [{"name": "状态", "type": "STRING", "links": [], "slot_index": 0}],
+      "properties": {"Node name for S&R": "AWPSessionSave"},
+      "widgets_values": ["", false]
+    }
+  ],
+  "links": [
+    [1, 1, 0, 9, 0, "STRING"],
+    [2, 1, 0, 11, 0, "STRING"],
+    [3, 2, 0, 6, 0, "STRING"],
+    [4, 2, 0, 10, 0, "STRING"],
+    [5, 2, 0, 13, 1, "STRING"],
+    [6, 2, 0, 15, 0, "STRING"],
+    [7, 2, 0, 20, 0, "STRING"],
+    [8, 2, 0, 22, 0, "STRING"],
+    [9, 3, 0, 7, 0, "STRING"],
+    [10, 4, 0, 12, 2, "STRING"],
+    [11, 5, 1, 12, 5, "STRING"],
+    [12, 6, 0, 22, 0, "STRING"],
+    [13, 7, 0, 8, 0, "STRING"],
+    [14, 7, 1, 12, 1, "STRING"],
+    [15, 7, 2, 9, 1, "STRING"],
+    [16, 7, 2, 11, 1, "STRING"],
+    [17, 8, 2, 21, 0, "STRING"],
+    [18, 9, 1, 12, 3, "STRING"],
+    [19, 10, 1, 12, 4, "STRING"],
+    [20, 11, 0, 12, 0, "STRING"],
+    [21, 11, 0, 15, 1, "STRING"],
+    [22, 12, 1, 13, 0, "STRING"],
+    [23, 12, 1, 17, 1, "STRING"],
+    [24, 13, 0, 14, 0, "STRING"],
+    [25, 13, 0, 15, 2, "STRING"],
+    [26, 13, 0, 17, 0, "STRING"],
+    [27, 14, 0, 16, 0, "STRING"],
+    [28, 14, 0, 17, 4, "STRING"],
+    [29, 17, 0, 18, 0, "STRING"],
+    [29, 17, 0, 20, 1, "STRING"],
+    [29, 17, 0, 22, 1, "STRING"],
+    [30, 17, 1, 19, 0, "STRING"]
+  ],
+  "groups": [
+    {"title": "输入", "bounding": [30, 80, 390, 670], "color": "#3f789e", "font_size": 24},
+    {"title": "素材读取", "bounding": [400, 80, 350, 800], "color": "#8a5e3f", "font_size": 24},
+    {"title": "解析与上下文", "bounding": [730, 80, 430, 750], "color": "#5e3f8a", "font_size": 24},
+    {"title": "生成与质检", "bounding": [1160, 80, 380, 780], "color": "#8a3f5e", "font_size": 24},
+    {"title": "输出与保存", "bounding": [1510, 80, 360, 760], "color": "#3f8a5e", "font_size": 24}
+  ],
+  "config": {},
+  "extra": {"ds": {"scale": 0.7, "offset": [0, 0]}},
+  "version": 0.4
+}

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "id": "awp.rp-skills",
+  "label": "RP Skills",
+  "version": "0.1.0",
+  "description": "Roleplay agent skills for persona, continuity, player agency, prose, and world context.",
+  "author": "Agent Workflow Platform",
+  "enabled": true,
+  "compatibility": { "app": ">=0.1.0" },
+  "skills": [
+    {
+      "id": "world_context",
+      "label": { "zh": "世界观上下文", "en": "World Context" },
+      "content": {
+        "zh": "提取和使用稳定的世界观设定。保持与既有世界书事实一致。",
+        "en": "Extract and use stable setting facts. Stay consistent with established worldbook canon."
+      },
+      "category": "knowledge",
+      "tags": ["worldbuilding", "canon", "facts"]
+    },
+    {
+      "id": "prose",
+      "label": { "zh": "散文写作", "en": "Prose Writing" },
+      "content": {
+        "zh": "写出生动、克制的中文叙述。避免过度修饰和陈词滥调。",
+        "en": "Write vivid, restrained prose. Avoid overwrought descriptions and clichés."
+      },
+      "category": "writing",
+      "tags": ["prose", "style", "narrative"]
+    },
+    {
+      "id": "consistency",
+      "label": { "zh": "一致性检查", "en": "Consistency" },
+      "content": {
+        "zh": "检查是否存在矛盾、遗漏事实或违反已确立的设定。",
+        "en": "Check for contradictions, missing facts, or violations of established canon."
+      },
+      "category": "safety",
+      "tags": ["consistency", "logic", "fact-checking"]
+    },
+    {
+      "id": "rp_persona",
+      "label": { "zh": "RP 角色扮演", "en": "RP Persona" },
+      "content": {
+        "zh": "保持角色人设、语气、关系立场、秘密和边界。不打破第四面墙。",
+        "en": "Stay in character. Preserve the character card's persona, voice, relationship stance, secrets, and boundaries."
+      },
+      "category": "roleplay",
+      "tags": ["persona", "voice", "immersion"]
+    },
+    {
+      "id": "rp_player_agency",
+      "label": { "zh": "玩家行动权保护", "en": "RP Player Agency" },
+      "content": {
+        "zh": "绝不替玩家决定行动、情绪、发言或意图。只描述 NPC 和环境，然后留出清晰的行动入口。",
+        "en": "Never decide the player's action, emotion, speech, or intention. Describe NPCs and environment, then leave a clear hook for the player."
+      },
+      "category": "safety",
+      "tags": ["agency", "boundary", "player"]
+    },
+    {
+      "id": "rp_continuity",
+      "label": { "zh": "RP 连续性", "en": "RP Continuity" },
+      "content": {
+        "zh": "以世界书事实和长期记忆作为正史。避免矛盾、关系跳跃和未经铺垫的揭示。",
+        "en": "Use worldbook facts and long-term memory as canon. Avoid contradictions, sudden relationship jumps, and unexplained reveals."
+      },
+      "category": "roleplay",
+      "tags": ["continuity", "canon", "memory"]
+    },
+    {
+      "id": "rp_slow_burn",
+      "label": { "zh": "RP 慢热叙事", "en": "RP Slow Burn" },
+      "content": {
+        "zh": "悬疑类 RP 每轮只揭示一个有意义的细节。保持紧张感、氛围和未回答的问题。",
+        "en": "For mystery roleplay, reveal one meaningful detail per turn. Keep tension, atmosphere, and unanswered questions alive."
+      },
+      "category": "roleplay",
+      "tags": ["slow-burn", "mystery", "tension", "pacing"]
+    }
+  ]
+}

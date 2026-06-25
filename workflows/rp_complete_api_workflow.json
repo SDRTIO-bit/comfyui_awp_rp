@@ -1,0 +1,224 @@
+{
+  "1": {
+    "inputs": {
+      "text": "我推开祠堂老旧的木门，门轴发出刺耳的吱呀声。祠堂里弥漫着檀香的气息，光线透过窗棂洒在牌位上。我看到一位年轻妇人正跪在蒲团上，低声祈祷。\n\n我轻轻走到她身后三步处停下，压低声音问道：「姑娘，这间祠堂供奉的是哪位先祖？」"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "用户输入"}
+  },
+  "2": {
+    "inputs": {
+      "text": "rp-session-001"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "会话ID"}
+  },
+  "3": {
+    "inputs": {
+      "json_text": "{\"scene\":{\"location\":\"桃花村祠堂\",\"time\":\"午后\",\"weather\":\"阴天\",\"activeHooks\":[\"祠堂禁地\",\"失踪的先祖牌位\"]},\"player\":{\"identity\":\"过路的游方道士\",\"stance\":\"谨慎试探\"},\"苏婉清\":{\"trust\":35,\"mood\":\"悲伤戒备\",\"secret\":\"先祖牌位并非失踪而是被她藏起\"},\"narrative\":{\"phase\":\"开场相遇\",\"tension\":\"低\"}}",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "当前变量状态 (MVU)"}
+  },
+  "4": {
+    "inputs": {
+      "json_text": "[{\"id\":\"wb_shrine\",\"keyword\":\"祠堂禁地\",\"title\":\"祠堂禁地\",\"content\":\"祠堂后院为禁地，传言供奉着一件镇妖法器。除族长外无人可入，擅闯者会被逐出桃花村。\",\"one_liner\":\"祠堂后院为镇妖法器禁地，擅闯逐村。\",\"tags\":[\"祠堂\",\"禁地\",\"法器\"],\"type\":\"lore\",\"priority\":95},{\"id\":\"wb_ancestor\",\"keyword\":\"先祖牌位\",\"title\":\"失踪的先祖牌位\",\"content\":\"三年前初代先祖的牌位不翼而飞，至今未找到。村民私下说是祖灵不满，也有人说是被偷去换钱。\",\"one_liner\":\"初代先祖牌位三年前失踪，村民议论纷纷。\",\"tags\":[\"先祖\",\"牌位\",\"失踪\"],\"type\":\"lore\",\"priority\":90},{\"id\":\"wb_su\",\"keyword\":\"苏婉清\",\"title\":\"苏婉清\",\"content\":\"苏家小女儿，二十三岁。自牌位失踪后被族人怀疑，从此少言寡语。她每日来祠堂上香，说是为族人祈福，实则在等什么人来。\",\"one_liner\":\"被怀疑的苏家女儿，每日来祠堂等人。\",\"tags\":[\"苏婉清\",\"角色\"],\"type\":\"character\",\"priority\":95},{\"id\":\"wb_village\",\"keyword\":\"桃花村\",\"title\":\"桃花村\",\"content\":\"坐落于青屏山脚的小村，以桃花酒闻名。村民世代守护祠堂，外人对祠堂之事讳莫如深。\",\"one_liner\":\"青屏山脚的小村，世代守护祠堂。\",\"tags\":[\"桃花村\",\"地点\"],\"type\":\"location\",\"priority\":80}]",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "世界书索引"}
+  },
+  "5": {
+    "inputs": {
+      "text": "## 叙事风格要求\n- 保持中国传统志怪小说的叙事质感\n- 对话使用半文半白的口语，人物语言符合身份\n- 环境描写细腻但不堆砌\n- 保持悬念，每轮至少埋下一个未被解答的细节\n\n## 玩家代理权保护\n- 绝对不要替玩家说话、决策或透露心理活动\n- 只描述NPC的反应和环境变化\n- 在回复末尾留出明确的行动入口"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "作者备注 (Author's Note)"}
+  },
+  "6": {
+    "inputs": {
+      "text": "苏婉清说话轻柔断续，习惯先低头再答话。她提到祖父时会不自觉地摸手腕上的红绳。她对祠堂的每一个角落了如指掌，但从不主动提及后院。"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "角色备注 (Character Note)"}
+  },
+  "7": {
+    "inputs": {
+      "json_text": "[{\"source_path\":\"scene.activeHooks\",\"split_pattern\":\"[,\\\\n]+\",\"prefix\":\"\"}]",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {"title": "变量注入规则"}
+  },
+  "8": {
+    "inputs": {
+      "text": "{\"spec\":\"chara_card_v3\",\"data\":{\"name\":\"苏婉清\",\"description\":\"苏家小女儿，二十三岁。自三年前先祖牌位失踪后被族人怀疑疏远，从此少言寡语。她每日来祠堂上香，说是为族人祈福，实则在等什么人兑现一个旧日承诺。她手腕上常年系着一根褪色的红绳，是她祖父留给她的，从未取下。\",\"personality\":\"外柔内韧，看似温顺实则心思缜密。说话习惯先停顿再开口，从不直视对方的眼睛超过三秒。\",\"first_mes\":\"檀香的轻烟在梁间缭绕。妇人跪在蒲团上，闻声肩头微微一颤，却没有回头。\\n\\n她沉默了片刻，声音轻得像祠堂角落里未散的灰烬：「——苏家。」顿了顿，又补了一句：「祠堂只供奉苏家的先祖。」\\n\\n她缓缓起身，转身面对你。你这才看清她的眼睛——不是悲伤，是一种沉了很久、很久的等待。\",\"alternate_greetings\":[\"她低头看着蒲团上的纹路，声音很轻：\\n\\n「道长……是路过，还是有人托你来的？」\",\"她的手停在香炉上方，没有回头。\\n\\n「这间祠堂，已经很久没有外人来过了。三年。」\"],\"scenario\":\"游方道士路经桃花村，在祠堂中遇见正在上香的苏婉清。\",\"system_prompt\":\"你是苏婉清。你是桃花村苏家的小女儿，二十三岁。你说话轻柔、断续，习惯先停顿再开口。你对祠堂了如指掌但从不主动提后院。你手腕上系着祖父留下的褪色红绳，提到祖父时会不自觉摸它。你在等一个人兑现承诺，所以对每个踏入祠堂的陌生人都心存期待但不敢表露。\",\"tags\":[\"古风\",\"志怪\",\"悬疑\",\"角色扮演\"],\"creator\":\"AWP RP Demo\",\"character_version\":\"1.0\"}}"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {"title": "角色卡 JSON"}
+  },
+  "9": {
+    "inputs": {
+      "card_json": ["8", 0],
+      "card_path": ""
+    },
+    "class_type": "AWPCardImport",
+    "_meta": {"title": "导入角色卡"}
+  },
+  "10": {
+    "inputs": {
+      "card_id": ["9", 0]
+    },
+    "class_type": "AWPCardSelect",
+    "_meta": {"title": "选择角色卡"}
+  },
+  "11": {
+    "inputs": {
+      "namespace": ["2", 0],
+      "tags_any": "",
+      "type_filter": "",
+      "limit": 10
+    },
+    "class_type": "AWPMemoryRead",
+    "_meta": {"title": "读取长期记忆"}
+  },
+  "12": {
+    "inputs": {
+      "user_input": ["1", 0],
+      "session_id": ["2", 0],
+      "current_variables": ["3", 0],
+      "worldbook_index": ["4", 0],
+      "memory_context": ["11", 1],
+      "var_diff": "{}",
+      "authors_note": ["5", 0],
+      "character_note": ["6", 0],
+      "injection_rules_json": ["7", 0],
+      "project_root": "",
+      "chapter_num": 0,
+      "story_genre": "",
+      "target_tokens": 4000,
+      "top_worldbook": 4
+    },
+    "class_type": "AWPRoundPreparer",
+    "_meta": {"title": "回合预处理 — 上下文组装"}
+  },
+  "13": {
+    "inputs": {
+      "user_input": ["12", 0],
+      "session_id": ["2", 0],
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "profile": "rp-writer",
+      "context_mode": "full_context",
+      "record_session": true,
+      "worldbook_context": ["12", 1],
+      "memory_context": ["11", 1],
+      "preset_id": "rp-default-v1",
+      "temperature": 0.85,
+      "max_tokens": 2048,
+      "enable_agent_loop": true,
+      "max_iterations": 5,
+      "tool_ids": "memory_read,worldbook_search,retrieval_search,card_get,continuity_check,npc_activity_scan,delegate_to_sub_agent",
+      "skill_ids": "rp_thinking_flow,hard_gates_full,rp_persona,rp_player_agency,rp_continuity,anti_ai_writing",
+      "current_variables": ["3", 0]
+    },
+    "class_type": "AWPMainAgent",
+    "_meta": {"title": "主Agent — Agent Loop 生成"}
+  },
+  "14": {
+    "inputs": {
+      "ai_response": ["13", 0],
+      "current_variables": ["3", 0],
+      "worldbook_index": ["4", 0],
+      "enable_worldbook_match": true,
+      "enable_validation": true,
+      "top_n_matches": 4
+    },
+    "class_type": "AWPMVUNode",
+    "_meta": {"title": "MVU — 变量更新 + 世界书匹配"}
+  },
+  "15": {
+    "inputs": {
+      "text": ["13", 0],
+      "variables": ["14", 0]
+    },
+    "class_type": "AWPMVUMacroResolver",
+    "_meta": {"title": "解析输出中的 {{getvar}} 宏"}
+  },
+  "16": {
+    "inputs": {
+      "reply": ["13", 0],
+      "critic_review_json": ""
+    },
+    "class_type": "AWPQualityGate",
+    "_meta": {"title": "质量门禁 — 7维检查"}
+  },
+  "17": {
+    "inputs": {
+      "session_id": ["2", 0],
+      "parsed_input_json": ["1", 0],
+      "reply": ["13", 0],
+      "character_id": ["10", 0],
+      "scene_id": "shrine_scene_01"
+    },
+    "class_type": "AWPPatchProposal",
+    "_meta": {"title": "候选补丁 — 记忆/状态提案"}
+  },
+  "18": {
+    "inputs": {
+      "reply": ["15", 0],
+      "context_bundle_json": "{}",
+      "candidate_state_patch": ["17", 0],
+      "candidate_memory_patch": ["17", 1],
+      "quality_decision_json": ["16", 0],
+      "side_effect_decision_json": "{}"
+    },
+    "class_type": "AWPOutputRenderer",
+    "_meta": {"title": "最终输出组装"}
+  },
+  "19": {
+    "inputs": {
+      "text": ["15", 0],
+      "label": "final_rp_reply"
+    },
+    "class_type": "AWPTextOutput",
+    "_meta": {"title": "最终回复文本"}
+  },
+  "20": {
+    "inputs": {
+      "json_text": ["13", 2],
+      "label": "agent_metadata",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "Agent 元数据 (Token/工具调用/轮次)"}
+  },
+  "21": {
+    "inputs": {
+      "json_text": ["14", 0],
+      "label": "updated_variables",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "更新后变量 — 下一轮输入"}
+  },
+  "22": {
+    "inputs": {
+      "json_text": ["14", 1],
+      "label": "variable_changes",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "本轮变量变更记录"}
+  },
+  "23": {
+    "inputs": {
+      "json_text": ["14", 4],
+      "label": "mvu_audit_report",
+      "pretty": true
+    },
+    "class_type": "AWPJsonOutput",
+    "_meta": {"title": "MVU 审计报告"}
+  }
+}

@@ -1,0 +1,434 @@
+{
+  "schemaVersion": 1,
+  "id": "awp.rp-core",
+  "label": "RP Core Nodes",
+  "version": "0.1.0",
+  "description": "Roleplay nodes for worldbook recall, memory recall, character cards, scene state, dialogue generation, and continuity checks.",
+  "author": "Agent Workflow Platform",
+  "enabled": false,
+  "compatibility": {
+    "app": ">=0.1.0",
+    "workflowSchema": 1
+  },
+  "permissions": ["worldbook:read", "memory:read", "model:call"],
+  "dependencies": [],
+  "executor": {
+    "adapter": "local-module",
+    "entry": "./executor.mjs"
+  },
+  "nodes": [
+    {
+      "type": "rpInputParser",
+      "label": "RP Input Parser",
+      "labelI18n": { "zh": "RP 输入解析", "en": "RP Input Parser" },
+      "category": "roleplay",
+      "description": "Parse raw player input into structured speech, action, intent, emotion, entities, and triggers.",
+      "descriptionI18n": {
+        "zh": "将玩家原始输入解析为结构化的发言、动作、意图、情绪、实体和触发词。",
+        "en": "Parse raw player input into structured speech, action, intent, emotion, entities, and triggers."
+      },
+      "color": "#d97706",
+      "preview": "Outputs parsed JSON with speech, action, intent, emotion, entities, and triggers.",
+      "previewI18n": {
+        "zh": "输出包含 speech、action、intent、emotion、entities 和 triggers 的解析 JSON。",
+        "en": "Outputs parsed JSON with speech, action, intent, emotion, entities, and triggers."
+      },
+      "defaultConfig": {
+        "parseRules": "分析玩家输入，提取：发言内容、角色动作、玩家意图、情绪标签、提到的实体名称、潜在触发词。输出JSON。",
+        "language": "zh"
+      },
+      "configFields": [
+        {
+          "key": "parseRules",
+          "label": { "zh": "解析指令", "en": "Parse rules" },
+          "kind": "textarea"
+        },
+        {
+          "key": "language",
+          "label": { "zh": "语言", "en": "Language" },
+          "kind": "select",
+          "options": ["zh", "en"]
+        }
+      ],
+      "quickAdd": true,
+      "ports": [
+        {
+          "id": "text",
+          "label": "Text",
+          "direction": "input",
+          "dataType": "user_input",
+          "required": true
+        },
+        { "id": "parsed", "label": "Parsed", "direction": "output", "dataType": "json" }
+      ]
+    },
+    {
+      "type": "rpContextAssembler",
+      "label": "RP Context Assembler",
+      "labelI18n": { "zh": "RP 上下文组装", "en": "RP Context Assembler" },
+      "category": "roleplay",
+      "description": "Assemble character, scene, worldbook, memory, and parsed input into a structured RP context.",
+      "descriptionI18n": {
+        "zh": "将角色卡、场景、世界书、记忆和解析后的玩家输入组装成结构化 RP 上下文。",
+        "en": "Assemble character card, scene state, worldbook hits, memory recall, and parsed input into structured RP context."
+      },
+      "color": "#d97706",
+      "preview": "Outputs assembled RP context string from all upstream sources.",
+      "previewI18n": {
+        "zh": "输出来自所有上游来源的组装 RP 上下文字符串。",
+        "en": "Outputs assembled RP context string from all upstream sources."
+      },
+      "defaultConfig": {
+        "assemblyTemplate": "【角色设定】\n{character}\n\n【当前场景】\n{scene}\n\n【世界书设定】\n{worldbook}\n\n【相关记忆】\n{memory}\n\n【玩家输入解析】\n{parsed}\n\n请基于以上上下文进行角色扮演。",
+        "maxTokens": 2000
+      },
+      "configFields": [
+        {
+          "key": "assemblyTemplate",
+          "label": { "zh": "组装模板", "en": "Assembly template" },
+          "kind": "textarea"
+        },
+        {
+          "key": "maxTokens",
+          "label": { "zh": "Token 上限", "en": "Max tokens" },
+          "kind": "number",
+          "min": 500,
+          "max": 4000
+        }
+      ],
+      "quickAdd": true,
+      "ports": [
+        { "id": "parsed", "label": "Parsed", "direction": "input", "dataType": "json" },
+        {
+          "id": "character",
+          "label": "Character",
+          "direction": "input",
+          "dataType": "character_profile"
+        },
+        { "id": "scene", "label": "Scene", "direction": "input", "dataType": "scene_state" },
+        { "id": "worldbook", "label": "Worldbook", "direction": "input", "dataType": "context" },
+        { "id": "memory", "label": "Memory", "direction": "input", "dataType": "context" },
+        { "id": "context", "label": "Context", "direction": "output", "dataType": "context" }
+      ]
+    },
+    {
+      "type": "worldbookSearch",
+      "label": "Worldbook Search",
+      "labelI18n": { "zh": "世界书检索", "en": "Worldbook Search" },
+      "category": "knowledge",
+      "description": "Search worldbook entries and return canon context.",
+      "descriptionI18n": {
+        "zh": "检索世界书条目，返回设定、角色、地点与规则上下文。",
+        "en": "Search worldbook entries and return setting, character, location, and rule context."
+      },
+      "color": "#2f7d6d",
+      "preview": "Returns matched worldbook entries and hit metadata.",
+      "previewI18n": {
+        "zh": "返回匹配的世界书条目和命中元数据。",
+        "en": "Returns matched worldbook entries and hit metadata."
+      },
+      "defaultConfig": { "query": "", "limit": 4 },
+      "configFields": [
+        {
+          "key": "query",
+          "label": { "zh": "备用查询", "en": "Fallback query" },
+          "kind": "textarea"
+        },
+        {
+          "key": "limit",
+          "label": { "zh": "条目数量", "en": "Entry limit" },
+          "kind": "number",
+          "min": 1,
+          "max": 10
+        }
+      ],
+      "quickAdd": true,
+      "ports": [
+        { "id": "query", "label": "Query", "direction": "input", "dataType": "user_input" },
+        { "id": "results", "label": "Results", "direction": "output", "dataType": "context" }
+      ]
+    },
+    {
+      "type": "memoryRecall",
+      "label": "Memory Recall",
+      "labelI18n": { "zh": "记忆召回", "en": "Memory Recall" },
+      "category": "memory",
+      "description": "Recall long-term roleplay memories relevant to the current user input.",
+      "descriptionI18n": {
+        "zh": "召回与当前玩家输入相关的长期角色扮演记忆。",
+        "en": "Recall long-term roleplay memories relevant to the current user input."
+      },
+      "color": "#7b5ea7",
+      "preview": "Returns matched relationship state, preferences, and unresolved hooks.",
+      "previewI18n": {
+        "zh": "返回匹配的关系状态、偏好和未解决的伏笔。",
+        "en": "Returns matched relationship state, preferences, and unresolved hooks."
+      },
+      "defaultConfig": { "query": "", "limit": 4 },
+      "configFields": [
+        {
+          "key": "query",
+          "label": { "zh": "备用查询", "en": "Fallback query" },
+          "kind": "textarea"
+        },
+        {
+          "key": "limit",
+          "label": { "zh": "记忆数量", "en": "Memory limit" },
+          "kind": "number",
+          "min": 1,
+          "max": 10
+        }
+      ],
+      "quickAdd": true,
+      "ports": [
+        { "id": "query", "label": "Query", "direction": "input", "dataType": "user_input" },
+        { "id": "memories", "label": "Memories", "direction": "output", "dataType": "context" }
+      ]
+    },
+    {
+      "type": "rpCharacterCard",
+      "label": "RP Character Card",
+      "labelI18n": { "zh": "RP 角色卡", "en": "RP Character Card" },
+      "category": "roleplay",
+      "description": "Define an NPC persona, voice, and boundaries.",
+      "descriptionI18n": {
+        "zh": "定义 NPC 角色的人设、口吻和边界。",
+        "en": "Define an NPC persona, voice, and boundaries."
+      },
+      "color": "#8f526b",
+      "preview": "Outputs a structured character profile for roleplay generation.",
+      "previewI18n": {
+        "zh": "输出用于角色扮演生成的结构化角色档案。",
+        "en": "Outputs a structured character profile for roleplay generation."
+      },
+      "defaultConfig": {
+        "name": "璃夏",
+        "persona": "冷静、敏锐，习惯用克制的语气试探对方。",
+        "voice": "短句，含蓄，偶尔带一点锋利的幽默。",
+        "boundaries": "不替玩家做决定，不直接揭开核心秘密。"
+      },
+      "configFields": [
+        { "key": "name", "label": { "zh": "角色名", "en": "Name" }, "kind": "text" },
+        { "key": "persona", "label": { "zh": "人设", "en": "Persona" }, "kind": "textarea" },
+        { "key": "voice", "label": { "zh": "语气", "en": "Voice" }, "kind": "textarea" },
+        { "key": "boundaries", "label": { "zh": "边界", "en": "Boundaries" }, "kind": "textarea" }
+      ],
+      "quickAdd": true,
+      "ports": [
+        { "id": "seed", "label": "Seed", "direction": "input", "dataType": "context" },
+        {
+          "id": "profile",
+          "label": "Profile",
+          "direction": "output",
+          "dataType": "character_profile"
+        }
+      ]
+    },
+    {
+      "type": "rpSceneState",
+      "label": "RP Scene State",
+      "labelI18n": { "zh": "RP 场景状态", "en": "RP Scene State" },
+      "category": "roleplay",
+      "description": "Collect location, mood, stakes, setup, and lore into a scene state.",
+      "descriptionI18n": {
+        "zh": "将地点、氛围、风险、开局设定和背景设定收集为场景状态。",
+        "en": "Collect location, mood, stakes, setup, and lore into a scene state."
+      },
+      "color": "#596d87",
+      "preview": "Outputs structured scene state for the dialogue director.",
+      "previewI18n": {
+        "zh": "输出供对话导演使用的结构化场景状态。",
+        "en": "Outputs structured scene state for the dialogue director."
+      },
+      "defaultConfig": {
+        "location": "雨夜旧书店",
+        "mood": "悬疑、克制、压低声音",
+        "stakes": "玩家正在追查一本会改写记忆的书。"
+      },
+      "configFields": [
+        { "key": "location", "label": { "zh": "地点", "en": "Location" }, "kind": "text" },
+        { "key": "mood", "label": { "zh": "氛围", "en": "Mood" }, "kind": "textarea" },
+        { "key": "stakes", "label": { "zh": "风险", "en": "Stakes" }, "kind": "textarea" }
+      ],
+      "quickAdd": true,
+      "ports": [
+        { "id": "setup", "label": "Setup", "direction": "input", "dataType": "user_input" },
+        { "id": "lore", "label": "Lore", "direction": "input", "dataType": "context" },
+        { "id": "state", "label": "State", "direction": "output", "dataType": "scene_state" }
+      ]
+    },
+    {
+      "type": "rpDialogueDirector",
+      "label": "RP Dialogue Director",
+      "labelI18n": { "zh": "RP 对话导演", "en": "RP Dialogue Director" },
+      "category": "roleplay",
+      "description": "Generate an in-character roleplay reply from player input, character, scene, lore, and memory.",
+      "descriptionI18n": {
+        "zh": "从玩家输入、角色卡、场景、设定和记忆中生成角色扮演回复。",
+        "en": "Generate an in-character roleplay reply from player input, character, scene, lore, and memory."
+      },
+      "color": "#9a6a3d",
+      "preview": "Outputs an RP reply while preserving player agency.",
+      "previewI18n": {
+        "zh": "在保留玩家自主权的同时输出角色扮演回复。",
+        "en": "Outputs an RP reply while preserving player agency."
+      },
+      "panelLayout": "agent",
+      "defaultConfig": {
+        "replyRules": "写中文。保留悬念。不要替玩家说话或行动。",
+        "skills": ["rp_persona", "rp_player_agency", "rp_continuity", "rp_slow_burn"],
+        "plugins": ["worldbook_read", "rp_memory_read"],
+        "model": "deepseek-v4-flash"
+      },
+      "configFields": [
+        {
+          "key": "model",
+          "label": { "zh": "模型", "en": "Model" },
+          "kind": "select",
+          "options": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-reasoner"]
+        },
+        {
+          "key": "replyRules",
+          "label": { "zh": "回复规则", "en": "Reply rules" },
+          "kind": "textarea"
+        },
+        { "key": "skills", "label": { "zh": "Skill", "en": "Skills" }, "kind": "tags" },
+        { "key": "plugins", "label": { "zh": "插件", "en": "Plugins" }, "kind": "tags" }
+      ],
+      "quickAdd": true,
+      "ports": [
+        {
+          "id": "player",
+          "label": "Player",
+          "direction": "input",
+          "dataType": "user_input",
+          "required": true
+        },
+        {
+          "id": "character",
+          "label": "Character",
+          "direction": "input",
+          "dataType": "character_profile",
+          "required": true
+        },
+        {
+          "id": "scene",
+          "label": "Scene",
+          "direction": "input",
+          "dataType": "scene_state",
+          "required": true
+        },
+        { "id": "memory", "label": "Memory", "direction": "input", "dataType": "context" },
+        { "id": "reply", "label": "Reply", "direction": "output", "dataType": "draft" }
+      ]
+    },
+    {
+      "type": "rpContinuityCheck",
+      "label": "RP Continuity Check",
+      "labelI18n": { "zh": "RP 连续性检查", "en": "RP Continuity Check" },
+      "category": "roleplay",
+      "description": "Check persona, canon, relationship continuity, and player agency.",
+      "descriptionI18n": {
+        "zh": "检查角色人设、正典设定、关系连续性和玩家自主权。",
+        "en": "Check persona, canon, relationship continuity, and player agency."
+      },
+      "color": "#7f6751",
+      "preview": "Outputs continuity notes for the generated RP reply.",
+      "previewI18n": {
+        "zh": "输出针对已生成 RP 回复的连续性检查笔记。",
+        "en": "Outputs continuity notes for the generated RP reply."
+      },
+      "panelLayout": "agent",
+      "defaultConfig": { "strictness": "medium", "skills": ["rp_player_agency", "rp_continuity"] },
+      "configFields": [
+        {
+          "key": "strictness",
+          "label": { "zh": "严格度", "en": "Strictness" },
+          "kind": "select",
+          "options": ["low", "medium", "high"]
+        },
+        { "key": "skills", "label": { "zh": "Skill", "en": "Skills" }, "kind": "tags" }
+      ],
+      "quickAdd": true,
+      "ports": [
+        {
+          "id": "draft",
+          "label": "Draft",
+          "direction": "input",
+          "dataType": "draft",
+          "required": true
+        },
+        { "id": "context", "label": "Context", "direction": "input", "dataType": "context" },
+        { "id": "notes", "label": "Notes", "direction": "output", "dataType": "analysis" }
+      ]
+    },
+    {
+      "type": "rpMemoryWrite",
+      "label": "RP Memory Write",
+      "labelI18n": { "zh": "RP 记忆写入", "en": "RP Memory Write" },
+      "category": "memory",
+      "description": "Analyze the turn and generate memory write candidates for relationship changes, preferences, promises, lore, and hooks.",
+      "descriptionI18n": {
+        "zh": "分析本轮对话，生成记忆写入候选：关系变化、偏好、承诺、设定揭示、未解决伏笔。",
+        "en": "Analyze this turn and generate memory write candidates for relationship changes, preferences, promises, lore reveals, and unresolved hooks."
+      },
+      "color": "#d97706",
+      "preview": "Outputs memory candidate JSON array with type, title, content, tags, and priority.",
+      "previewI18n": {
+        "zh": "输出包含类型、标题、内容、标签和优先级的记忆候选 JSON 数组。",
+        "en": "Outputs memory candidate JSON array with type, title, content, tags, and priority."
+      },
+      "defaultConfig": {
+        "autoWrite": false,
+        "maxCandidates": 5,
+        "memoryTypes": ["relationship", "preference", "promise", "lore", "hook"]
+      },
+      "configFields": [
+        {
+          "key": "autoWrite",
+          "label": { "zh": "自动写入", "en": "Auto write" },
+          "kind": "boolean"
+        },
+        {
+          "key": "maxCandidates",
+          "label": { "zh": "最大候选数", "en": "Max candidates" },
+          "kind": "number",
+          "min": 1,
+          "max": 10
+        },
+        {
+          "key": "memoryTypes",
+          "label": { "zh": "记忆类型", "en": "Memory types" },
+          "kind": "multiselect",
+          "options": [
+            { "label": { "zh": "关系变化", "en": "Relationship" }, "value": "relationship" },
+            { "label": { "zh": "偏好", "en": "Preference" }, "value": "preference" },
+            { "label": { "zh": "承诺", "en": "Promise" }, "value": "promise" },
+            { "label": { "zh": "设定揭示", "en": "Lore" }, "value": "lore" },
+            { "label": { "zh": "伏笔", "en": "Hook" }, "value": "hook" }
+          ]
+        }
+      ],
+      "quickAdd": true,
+      "ports": [
+        {
+          "id": "reply",
+          "label": "Reply",
+          "direction": "input",
+          "dataType": "draft",
+          "required": true
+        },
+        {
+          "id": "notes",
+          "label": "Notes",
+          "direction": "input",
+          "dataType": "analysis",
+          "required": true
+        },
+        { "id": "parsed", "label": "Parsed", "direction": "input", "dataType": "json" },
+        { "id": "state", "label": "State", "direction": "input", "dataType": "scene_state" },
+        { "id": "candidates", "label": "Candidates", "direction": "output", "dataType": "json" }
+      ]
+    }
+  ]
+}
