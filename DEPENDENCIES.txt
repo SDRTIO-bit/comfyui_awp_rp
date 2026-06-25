@@ -1,0 +1,15 @@
+# ComfyUI AWP RP Plugin Dependencies
+# 安装: pip install -r comfyui_awp_rp/requirements.txt
+#
+# dependencies
+requests>=2.31.0
+jieba>=0.42.1
+#
+# 说明
+# requests  - LLM API 调用 (DeepSeek / OpenAI 兼容, core/llm_router.py)
+# jieba     - 中文分词 (BM25 检索, retrieval/tokenizer.py)
+#            未安装时自动降级为 2-gram，不报错仅召回率下降
+#
+# 运行时环境
+# Python 3.10+ (随 ComfyUI 自带)
+# SQLite3 (Python 标准库, core/store.py)
