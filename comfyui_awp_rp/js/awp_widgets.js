@@ -119,6 +119,56 @@ app.registerExtension({
     },
 });
 
+
+// ============ 核心菜单尽力汉化（脆弱层，失败静默回退英文） ============
+// ComfyUI 核心渲染的搜索框 placeholder、部分右键菜单项等不在 nodeCreated
+// 覆盖范围，用 DOM 文本替换尽力汉化。随 ComfyUI 版本可能失效，包 try/catch。
+(function awpMenuI18n() {
+    function hasCJK(s) { return /[一-鿿]/.test(s); }
+
+    function translateMenuLabels() {
+        var menuLabels = awpGet("menuLabels");
+        if (!menuLabels) return;
+        try {
+            // 搜索框 placeholder
+            var searchInputs = document.querySelectorAll(
+                'input[placeholder], .litegraph input, .comfy-vue input[placeholder]'
+            );
+            for (var i = 0; i < searchInputs.length; i++) {
+                var el = searchInputs[i];
+                var p = el.getAttribute("placeholder");
+                if (p && menuLabels[p]) el.setAttribute("placeholder", menuLabels[p]);
+            }
+
+            // 右键菜单 / 节点库列表项文本
+            var candidates = document.querySelectorAll(
+                '.litecontextmenu .menu-entry, .context-menu .menu-entry, .comfy-vue .context-menu-item'
+            );
+            for (var j = 0; j < candidates.length; j++) {
+                var item = candidates[j];
+                var txt = (item.textContent || "").trim();
+                // 仅翻译整段匹配且不含中文的英文菜单项
+                if (txt && !hasCJK(txt) && menuLabels[txt]) {
+                    item.textContent = menuLabels[txt];
+                }
+            }
+        } catch (e) {
+            // 静默回退：菜单保持英文，不影响功能
+        }
+    }
+
+    // 菜单是动态生成的，用 MutationObserver 监听 DOM 变化重译
+    try {
+        var observer = new MutationObserver(function () { translateMenuLabels(); });
+        observer.observe(document.body, { childList: true, subtree: true });
+        // 首次也译一次
+        document.addEventListener("DOMContentLoaded", translateMenuLabels);
+        setTimeout(translateMenuLabels, 1000);
+    } catch (e) {
+        console.warn("[AWP] 菜单汉化补丁初始化失败:", e);
+    }
+})();
+
 // ============ 供应商设置面板 ============
 const PROVIDER_SETTINGS = [
     { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
