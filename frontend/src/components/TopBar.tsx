@@ -15,12 +15,18 @@ export default function TopBar({ sessionTitle, contextLine, connOk, onInspectorT
           <rect x="2" y="9" width="5" height="5" rx="1" fill="currentColor"/>
           <rect x="9" y="9" width="5" height="5" rx="1" fill="currentColor" opacity="0.3"/>
         </svg>
-        Story Workshop
+        {sessionTitle}
       </span>
-      {contextLine && (
-        <div className="flex items-center gap-1.5 text-[12.5px] text-[var(--color-text-2)] whitespace-nowrap overflow-hidden text-ellipsis" dangerouslySetInnerHTML={{ __html: contextLine }} />
+      {contextLine ? (
+        <div
+          className="min-w-0 flex-1 text-[12.5px] text-[var(--color-text-2)] whitespace-nowrap overflow-hidden text-ellipsis"
+          title={contextLine}
+        >
+          {contextLine}
+        </div>
+      ) : (
+        <div className="flex-1" />
       )}
-      <div className="flex-1" />
       <span
         className={`w-1.5 h-1.5 rounded-full mr-3 cursor-pointer flex-shrink-0 ${connOk ? 'bg-[var(--color-ok)]' : 'bg-[var(--color-err)]'}`}
         title={connOk ? '服务正常' : '连接异常'}

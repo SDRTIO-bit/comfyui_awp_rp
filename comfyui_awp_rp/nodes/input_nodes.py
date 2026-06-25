@@ -94,7 +94,10 @@ class AWPTextOutput:
     OUTPUT_NODE = True
 
     def execute(self, text: str, label: str = "output"):
-        return (text,)
+        return {
+            "ui": {"text": [text], "label": [label]},
+            "result": (text,),
+        }
 
 
 class AWPJsonOutput:
@@ -128,9 +131,20 @@ class AWPJsonOutput:
 
     def execute(self, json_text: str, label: str = "json_output", pretty: bool = True):
         if not pretty:
-            return (json_text, "OK")
+            return {
+                "ui": {"text": [json_text], "label": [label], "status": ["OK"]},
+                "result": (json_text, "OK"),
+            }
         try:
             parsed = json.loads(json_text or "{}")
         except json.JSONDecodeError as exc:
-            return (json_text, f"JSON error: {exc}")
-        return (json.dumps(parsed, ensure_ascii=False, indent=2), "OK")
+            status = f"JSON error: {exc}"
+            return {
+                "ui": {"text": [json_text], "label": [label], "status": [status]},
+                "result": (json_text, status),
+            }
+        formatted = json.dumps(parsed, ensure_ascii=False, indent=2)
+        return {
+            "ui": {"text": [formatted], "label": [label], "status": ["OK"]},
+            "result": (formatted, "OK"),
+        }

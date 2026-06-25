@@ -1,5 +1,15 @@
-import { useEffect, useReducer, useCallback } from 'react'
-import type { PageState, ResourceType, TurnData, CardMeta, SessionMeta, WorldbookEntry, PresetMeta, WorkflowMeta, WorkflowAnalysis } from '../types'
+import { useEffect, useReducer, useCallback, useMemo } from 'react'
+import type {
+  PageState,
+  ResourceType,
+  TurnData,
+  CardMeta,
+  SessionMeta,
+  WorldbookEntry,
+  PresetMeta,
+  WorkflowMeta,
+  WorkflowAnalysis,
+} from '../types'
 import TopBar from '../components/TopBar'
 import LeftRail from '../components/LeftRail'
 import ResourcePanel from '../components/ResourcePanel'
@@ -12,7 +22,7 @@ interface State {
   resourceType: ResourceType | null
   inspectorOpen: boolean
   sessionTitle: string
-  contextLine: string  // "角色 · 身份 / 场景 · 时间 / 第N轮"
+  contextLine: string
   turns: TurnData[]
   cards: CardMeta[]
   sessions: SessionMeta[]
@@ -26,6 +36,15 @@ interface State {
   activeWorkflow: string
   currentRound: number
   connOk: boolean
+  errorMessage: string
+  logs: { time: string; message: string }[]
+}
+
+interface RunResponse {
+  ok: boolean
+  prompt_id?: string
+  outputs?: Record<string, string>
+  error?: string
 }
 
 type Action =
@@ -36,11 +55,15 @@ type Action =
   | { type: 'SET_DATA'; key: string; data: unknown }
   | { type: 'SET_CONTEXT'; line: string; title: string; round: number }
   | { type: 'SET_CONN'; ok: boolean }
+  | { type: 'RESET_SESSION' }
+  | { type: 'ADD_TURN'; turn: TurnData }
+  | { type: 'SET_ERROR'; message: string }
+  | { type: 'LOG'; message: string }
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'SET_STATE':
-      return { ...state, pageState: action.state }
+      return { ...state, pageState: action.state, errorMessage: action.state === 'error' ? state.errorMessage : '' }
     case 'TOGGLE_RESOURCE':
       return { ...state, resourceType: state.resourceType === action.resource ? null : action.resource }
     case 'CLOSE_RESOURCE':
@@ -53,6 +76,23 @@ function reducer(state: State, action: Action): State {
       return { ...state, contextLine: action.line, sessionTitle: action.title, currentRound: action.round }
     case 'SET_CONN':
       return { ...state, connOk: action.ok }
+    case 'RESET_SESSION':
+      return { ...state, pageState: 'active', turns: [], currentRound: 0, errorMessage: '' }
+    case 'ADD_TURN':
+      return {
+        ...state,
+        pageState: 'active',
+        turns: [...state.turns, action.turn],
+        currentRound: action.turn.index,
+        errorMessage: '',
+      }
+    case 'SET_ERROR':
+      return { ...state, pageState: 'error', errorMessage: action.message }
+    case 'LOG':
+      return {
+        ...state,
+        logs: [...state.logs.slice(-19), { time: new Date().toLocaleTimeString(), message: action.message }],
+      }
     default:
       return state
   }
@@ -77,12 +117,81 @@ const initialState: State = {
   activeWorkflow: 'rp_full_node_workflow.json',
   currentRound: 0,
   connOk: true,
+  errorMessage: '',
+  logs: [],
+}
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init)
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : `HTTP ${response.status}`)
+  }
+  return data as T
+}
+
+function buildRoles(state: State, text: string) {
+  return {
+    user_input: text,
+    session_id: state.activeSessionId,
+    card_id: state.activeCardId,
+    preset: state.activePresetId,
+    generator: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      profile: 'rp-writer',
+      preset_id: state.activePresetId,
+      context_mode: 'full_context',
+      temperature: 0.85,
+      max_tokens: 2048,
+    },
+  }
+}
+
+function pickNarrative(result: RunResponse): string {
+  const outputs = Object.entries(result.outputs ?? {})
+  const preferred =
+    outputs.find(([key]) => /final|reply|text|文本/i.test(key)) ??
+    outputs.find(([, value]) => typeof value === 'string' && value.trim().length > 0)
+  return preferred?.[1]?.trim() || `运行完成，prompt_id=${result.prompt_id ?? 'unknown'}，但没有文本输出。`
+}
+
+function roleNode(analysis: WorkflowAnalysis | null, role: string) {
+  const item = analysis?.roles.find(r => r.role === role)
+  return item ? `#${item.node_id} ${item.node_type}` : '未识别'
 }
 
 export default function RPPage() {
   const [s, dispatch] = useReducer(reducer, initialState)
 
-  // Load all data on mount
+  const activeCard = useMemo(
+    () => s.cards.find(c => c.card_id === s.activeCardId),
+    [s.cards, s.activeCardId],
+  )
+  const activeSession = useMemo(
+    () => s.sessions.find(item => item.session_id === s.activeSessionId),
+    [s.sessions, s.activeSessionId],
+  )
+
+  const loadWorldbook = useCallback(async (cardId: string) => {
+    try {
+      const wb = await fetchJson<WorldbookEntry[]>(`/api/worldbook/${encodeURIComponent(cardId)}`)
+      dispatch({ type: 'SET_DATA', key: 'worldbookEntries', data: wb })
+    } catch (err) {
+      dispatch({ type: 'LOG', message: `世界书加载失败：${err instanceof Error ? err.message : String(err)}` })
+    }
+  }, [])
+
+  const loadAnalysis = useCallback(async (workflow: string) => {
+    try {
+      const ana = await fetchJson<WorkflowAnalysis>(`/api/workflows/${encodeURIComponent(workflow)}/analyze`)
+      dispatch({ type: 'SET_DATA', key: 'analysis', data: ana })
+    } catch (err) {
+      dispatch({ type: 'SET_DATA', key: 'analysis', data: null })
+      dispatch({ type: 'LOG', message: `工作流分析失败：${err instanceof Error ? err.message : String(err)}` })
+    }
+  }, [])
+
   const fetchData = useCallback(async () => {
     const fetchers: [string, string][] = [
       ['cards', '/api/cards'],
@@ -91,68 +200,133 @@ export default function RPPage() {
       ['workflows', '/api/workflows'],
     ]
     const results = await Promise.allSettled(
-      fetchers.map(([key, url]) =>
-        fetch(url).then(r => r.json()).then(data => [key, data] as const)
-      )
+      fetchers.map(([key, url]) => fetchJson<unknown>(url).then(data => [key, data] as const)),
     )
+
     let cardId = initialState.activeCardId
     let sessionId = initialState.activeSessionId
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        const [key, data] = r.value
-        dispatch({ type: 'SET_DATA', key, data })
-        // Use first real card/session ID from API response
-        if (key === 'cards' && Array.isArray(data) && data.length > 0) {
-          cardId = data[0].card_id
-          dispatch({ type: 'SET_DATA', key: 'activeCardId', data: cardId })
-        }
-        if (key === 'sessions' && Array.isArray(data) && data.length > 0) {
-          sessionId = data[0].session_id
-          dispatch({ type: 'SET_DATA', key: 'activeSessionId', data: sessionId })
-        }
+    for (const result of results) {
+      if (result.status !== 'fulfilled') continue
+      const [key, data] = result.value
+      dispatch({ type: 'SET_DATA', key, data })
+      if (key === 'cards' && Array.isArray(data) && data.length > 0) {
+        cardId = (data[0] as CardMeta).card_id
+        dispatch({ type: 'SET_DATA', key: 'activeCardId', data: cardId })
+      }
+      if (key === 'sessions' && Array.isArray(data) && data.length > 0) {
+        sessionId = (data[0] as SessionMeta).session_id
+        dispatch({ type: 'SET_DATA', key: 'activeSessionId', data: sessionId })
       }
     }
 
-    // Load worldbook for active card
-    try {
-      const wb = await fetch(`/api/worldbook/${cardId}`).then(r => r.json())
-      dispatch({ type: 'SET_DATA', key: 'worldbookEntries', data: wb })
-    } catch { /* no worldbook yet */ }
+    await Promise.allSettled([loadWorldbook(cardId), loadAnalysis(initialState.activeWorkflow)])
 
-    // Analyze active workflow
     try {
-      const ana = await fetch(`/api/workflows/${initialState.activeWorkflow}/analyze`).then(r => r.json())
-      dispatch({ type: 'SET_DATA', key: 'analysis', data: ana })
-    } catch { /* analysis not available */ }
-
-    // Health check
-    try {
-      const h = await fetch('/api/health').then(r => r.json())
-      dispatch({ type: 'SET_CONN', ok: h.status === 'ok' })
-    } catch { dispatch({ type: 'SET_CONN', ok: false }) }
-  }, [])
+      const health = await fetchJson<{ status: string }>('/api/health')
+      dispatch({ type: 'SET_CONN', ok: health.status === 'ok' })
+    } catch {
+      dispatch({ type: 'SET_CONN', ok: false })
+    }
+    dispatch({ type: 'LOG', message: `数据已加载：${sessionId}` })
+  }, [loadAnalysis, loadWorldbook])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const runAction = useCallback(async (text: string) => {
+    const action = text.trim()
+    if (!action || s.pageState === 'generating') return
+
+    dispatch({ type: 'SET_STATE', state: 'generating' })
+    dispatch({ type: 'LOG', message: `提交工作流：${s.activeWorkflow}` })
+
+    try {
+      const result = await fetchJson<RunResponse>('/api/run-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflow: s.activeWorkflow,
+          roles: buildRoles(s, action),
+        }),
+      })
+      if (!result.ok) {
+        throw new Error(result.error || '工作流运行失败')
+      }
+      const turn: TurnData = {
+        index: s.turns.length + 1,
+        action,
+        narrative: pickNarrative(result),
+      }
+      dispatch({ type: 'ADD_TURN', turn })
+      dispatch({ type: 'SET_CONTEXT', title: 'Story Workshop', line: `${s.activeSessionId} / 第 ${turn.index} 轮`, round: turn.index })
+      dispatch({ type: 'LOG', message: `运行完成：${result.prompt_id ?? 'no prompt_id'}` })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      dispatch({ type: 'SET_ERROR', message })
+      dispatch({ type: 'LOG', message: `运行失败：${message}` })
+    }
+  }, [s])
+
+  const startNewSession = useCallback(() => {
+    dispatch({ type: 'RESET_SESSION' })
+    dispatch({ type: 'LOG', message: '已新建会话草稿' })
+  }, [])
 
   const toggleResource = useCallback((r: ResourceType) => dispatch({ type: 'TOGGLE_RESOURCE', resource: r }), [])
   const closeResource = useCallback(() => dispatch({ type: 'CLOSE_RESOURCE' }), [])
   const toggleInspector = useCallback(() => dispatch({ type: 'TOGGLE_INSPECTOR' }), [])
-  const onSend = useCallback(() => dispatch({ type: 'SET_STATE', state: 'generating' }), [])
-  // In production, onSend would POST /api/run and handle response
+  const retryLast = useCallback((action?: string) => {
+    const text = action ?? s.turns.at(-1)?.action ?? '让故事继续。'
+    void runAction(text)
+  }, [runAction, s.turns])
+
+  const selectCard = useCallback((cardId: string) => {
+    dispatch({ type: 'SET_DATA', key: 'activeCardId', data: cardId })
+    void loadWorldbook(cardId)
+  }, [loadWorldbook])
+
+  const selectSession = useCallback((sessionId: string) => {
+    dispatch({ type: 'SET_DATA', key: 'activeSessionId', data: sessionId })
+    dispatch({ type: 'SET_STATE', state: 'active' })
+  }, [])
+
+  const selectPreset = useCallback((presetId: string) => {
+    dispatch({ type: 'SET_DATA', key: 'activePresetId', data: presetId })
+  }, [])
+
+  const selectWorkflow = useCallback((workflow: string) => {
+    dispatch({ type: 'SET_DATA', key: 'activeWorkflow', data: workflow })
+    void loadAnalysis(workflow)
+  }, [loadAnalysis])
+
+  const contextLine = useMemo(() => {
+    const parts = [
+      activeCard?.manifest.name,
+      activeSession?.session_id ?? s.activeSessionId,
+      s.currentRound > 0 ? `第 ${s.currentRound} 轮` : null,
+      s.activeWorkflow,
+    ].filter(Boolean)
+    return parts.join(' / ')
+  }, [activeCard, activeSession, s.activeSessionId, s.activeWorkflow, s.currentRound])
+
+  const nodeMapping = useMemo(() => ({
+    userInput: roleNode(s.analysis, 'user_input'),
+    sessionId: roleNode(s.analysis, 'session_id'),
+    cardId: roleNode(s.analysis, 'card_id'),
+    generator: roleNode(s.analysis, 'generator'),
+    totalMapped: s.analysis?.roles.length ?? 0,
+    totalExpected: 5,
+  }), [s.analysis])
 
   return (
     <div className="flex flex-col h-full">
       <TopBar
         sessionTitle={s.sessionTitle}
-        contextLine={s.contextLine}
+        contextLine={contextLine || s.contextLine}
         connOk={s.connOk}
         onInspectorToggle={toggleInspector}
       />
       <div className="flex flex-1 overflow-hidden relative">
-        <LeftRail
-          activeResource={s.resourceType}
-          onToggle={toggleResource}
-        />
+        <LeftRail activeResource={s.resourceType} onToggle={toggleResource} />
         <ResourcePanel
           open={s.resourceType !== null}
           type={s.resourceType}
@@ -163,24 +337,38 @@ export default function RPPage() {
           workflows={s.workflows}
           activeCardId={s.activeCardId}
           activeSessionId={s.activeSessionId}
+          activePresetId={s.activePresetId}
+          activeWorkflow={s.activeWorkflow}
+          onSelectCard={selectCard}
+          onSelectSession={selectSession}
+          onSelectPreset={selectPreset}
+          onSelectWorkflow={selectWorkflow}
           onClose={closeResource}
         />
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           <div className="flex-1 overflow-y-auto px-8 md:px-12 py-8">
-            {(s.pageState === 'active' || s.pageState === 'generating' || s.pageState === 'error') && s.turns.length > 0 && (
-              <NarrativeFlow turns={s.turns} currentIndex={s.turns.length - 1} onInspect={toggleInspector} />
+            {s.turns.length > 0 && (
+              <NarrativeFlow
+                turns={s.turns}
+                currentIndex={s.turns.length - 1}
+                onInspect={toggleInspector}
+                onRetry={retryLast}
+              />
             )}
             {s.pageState === 'empty' && (
               <div className="flex flex-col items-center justify-center h-full text-[var(--color-text-3)] gap-3 text-center">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" className="opacity-20">
-                  <rect x="3" y="2" width="18" height="20" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-                  <line x1="8" y1="7" x2="16" y2="7" stroke="currentColor" strokeWidth="1"/>
-                  <line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" strokeWidth="1"/>
+                  <rect x="3" y="2" width="18" height="20" rx="2" stroke="currentColor" strokeWidth="1.3" />
+                  <line x1="8" y1="7" x2="16" y2="7" stroke="currentColor" strokeWidth="1" />
+                  <line x1="8" y1="11" x2="14" y2="11" stroke="currentColor" strokeWidth="1" />
                 </svg>
-                <div className="text-sm max-w-[300px] leading-relaxed">选择一个角色卡和会话，或者新建一个故事来开始。</div>
+                <div className="text-sm max-w-[300px] leading-relaxed">
+                  选择一个角色卡和会话，或者新建一个故事来开始。
+                </div>
                 <button
+                  type="button"
                   className="bg-[var(--color-accent-dim)] text-[var(--color-text)] px-6 py-2 rounded-md text-sm mt-2 hover:bg-[var(--color-accent)] transition-colors"
-                  onClick={() => dispatch({ type: 'SET_STATE', state: 'active' })}
+                  onClick={startNewSession}
                 >
                   新建会话
                 </button>
@@ -189,18 +377,41 @@ export default function RPPage() {
           </div>
           <InputDock
             state={s.pageState}
-            onSend={onSend}
+            errorMessage={s.errorMessage}
+            onSend={runAction}
+            onContinue={() => runAction('让故事继续。')}
+            onRetry={() => retryLast()}
           />
         </div>
         <RightPanel
           open={s.inspectorOpen}
           onClose={toggleInspector}
+          context={{
+            cardName: activeCard?.manifest.name,
+            sessionId: s.activeSessionId,
+            round: s.currentRound,
+            workflowReady: Boolean(s.analysis),
+          }}
+          genParams={{
+            provider: 'deepseek',
+            model: 'deepseek-chat',
+            temperature: 0.85,
+            maxTokens: 2048,
+            contextMode: 'full_context',
+            preset: s.activePresetId,
+          }}
+          nodeMapping={nodeMapping}
+          logs={s.logs}
         />
         {!s.inspectorOpen && (
           <button
+            type="button"
             className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-10 bg-[var(--color-bg-app)] border border-[var(--color-border)] border-r-0 rounded-l flex items-center justify-center cursor-pointer text-[var(--color-text-3)] text-[9px] z-[5] hover:text-[var(--color-text-2)] hover:bg-[var(--color-bg-surface)] transition-colors"
             onClick={toggleInspector}
-          >◀</button>
+            aria-label="打开运行详情"
+          >
+            ◀
+          </button>
         )}
       </div>
     </div>

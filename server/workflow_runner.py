@@ -18,6 +18,15 @@ from pathlib import Path
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:8188")
 WORKFLOW_DIR = Path(__file__).parent.parent / "workflows"
 PORT = int(os.environ.get("RUNNER_PORT", "8765"))
+HOST = os.environ.get("RUNNER_HOST", "127.0.0.1")
+ALLOWED_ORIGINS = {
+    origin.strip()
+    for origin in os.environ.get(
+        "RUNNER_CORS_ORIGINS",
+        f"http://127.0.0.1:{PORT},http://localhost:{PORT},http://127.0.0.1:5173,http://localhost:5173",
+    ).split(",")
+    if origin.strip()
+}
 
 
 def list_workflows() -> list[dict]:
@@ -26,11 +35,17 @@ def list_workflows() -> list[dict]:
     for f in sorted(WORKFLOW_DIR.glob("*.json")):
         try:
             wf = json.loads(f.read_text(encoding="utf-8"))
-            nodes = wf.get("nodes", [])
-            links = wf.get("links", [])
-
-            inputs = _discover_inputs(nodes)
-            outputs = _discover_outputs(nodes, links)
+            if _is_api_prompt_format(wf):
+                prompt = _unwrap_api_prompt(wf)
+                nodes = _api_prompt_nodes(prompt)
+                links = _api_prompt_links(prompt)
+                inputs = []
+                outputs = []
+            else:
+                nodes = wf.get("nodes", [])
+                links = wf.get("links", [])
+                inputs = _discover_inputs(nodes)
+                outputs = _discover_outputs(nodes, links)
 
             workflows.append({
                 "filename": f.name,
@@ -124,10 +139,76 @@ def _guess_label(node: dict, widget_idx: int) -> str:
 
 def load_workflow(filename: str) -> dict | None:
     """Load a workflow JSON file."""
-    path = WORKFLOW_DIR / filename
-    if not path.exists():
+    path = _safe_workflow_path(filename)
+    if path is None or not path.exists() or not path.is_file():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def _safe_workflow_path(filename: str) -> Path | None:
+    """Resolve a workflow filename without allowing traversal outside workflows."""
+    if not filename or Path(filename).name != filename:
+        return None
+    if Path(filename).suffix.lower() != ".json":
+        return None
+    root = WORKFLOW_DIR.resolve()
+    path = (root / filename).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return None
+    return path
+
+
+def _is_api_prompt_format(workflow: dict) -> bool:
+    prompt = _unwrap_api_prompt(workflow)
+    return bool(prompt) and all(
+        isinstance(v, dict) and "class_type" in v and "inputs" in v
+        for v in prompt.values()
+    )
+
+
+def _unwrap_api_prompt(workflow: dict) -> dict:
+    if isinstance(workflow.get("prompt"), dict):
+        return workflow["prompt"]
+    if "nodes" not in workflow and isinstance(workflow, dict):
+        return workflow
+    return {}
+
+
+def _api_prompt_nodes(prompt: dict) -> list[dict]:
+    nodes = []
+    for node_id, node in prompt.items():
+        try:
+            nid = int(node_id)
+        except (TypeError, ValueError):
+            nid = node_id
+        nodes.append({
+            "id": nid,
+            "type": node.get("class_type", "Unknown"),
+            "inputs": node.get("inputs", {}),
+            "title": (node.get("_meta") or {}).get("title", ""),
+        })
+    return nodes
+
+
+def _api_prompt_links(prompt: dict) -> list[list]:
+    links = []
+    for to_id, node in prompt.items():
+        try:
+            to_node = int(to_id)
+        except (TypeError, ValueError):
+            continue
+        for slot_idx, value in enumerate((node.get("inputs") or {}).values()):
+            if _is_link_value(value):
+                try:
+                    links.append([None, int(value[0]), int(value[1]), to_node, slot_idx, ""])
+                except (TypeError, ValueError):
+                    continue
+    return links
 
 
 def convert_to_api_format(workflow: dict) -> dict:
@@ -136,6 +217,9 @@ def convert_to_api_format(workflow: dict) -> dict:
     Handles widget_values (literal), links (node references), and resolves
     input slot names by dynamically importing node classes.
     """
+    if _is_api_prompt_format(workflow):
+        return {"prompt": _unwrap_api_prompt(workflow)}
+
     nodes = workflow.get("nodes", [])
     links = workflow.get("links", [])
 
@@ -150,30 +234,7 @@ def convert_to_api_format(workflow: dict) -> dict:
     for node in nodes:
         nid = str(node["id"])
         ntype = node["type"]
-        node_inputs: dict[str, object] = {}
-        raw_inputs = node.get("inputs") or []
-        widgets = node.get("widgets_values") or []
-
-        # Get required input names for this node type
-        input_names = _get_node_input_names(ntype)
-
-        if raw_inputs:
-            # Node has explicit input slots in workflow
-            for slot_idx, inp in enumerate(raw_inputs):
-                inp_name = inp.get("name", f"slot_{slot_idx}")
-                link_src = link_map.get((node["id"], slot_idx))
-                if link_src is not None:
-                    node_inputs[inp_name] = [str(link_src[0]), link_src[1]]
-                elif slot_idx < len(widgets):
-                    node_inputs[inp_name] = _coerce_widget(widgets[slot_idx])
-        elif input_names and widgets:
-            # Leaf node: map widgets to known input names
-            for idx, name in enumerate(input_names):
-                if idx < len(widgets):
-                    node_inputs[name] = _coerce_widget(widgets[idx])
-        elif widgets:
-            # Fallback: unknown node type, use generic name
-            node_inputs["text"] = _coerce_widget(widgets[0]) if widgets else ""
+        node_inputs = _map_node_inputs(node, link_map)
 
         prompt[nid] = {
             "inputs": node_inputs,
@@ -185,8 +246,6 @@ def convert_to_api_format(workflow: dict) -> dict:
 
 def _coerce_widget(val: object) -> object:
     """Coerce widget values to ComfyUI API format."""
-    if isinstance(val, bool):
-        return 1 if val else 0
     if isinstance(val, str) and val.startswith("{") and val.endswith("}"):
         return val  # Preserve JSON objects
     return val
@@ -194,30 +253,169 @@ def _coerce_widget(val: object) -> object:
 
 # Cache for node input name lookups
 _node_input_cache: dict[str, list[str]] = {}
+_node_input_spec_cache: dict[str, list[dict]] = {}
 
 
 def _get_node_input_names(node_type: str) -> list[str]:
-    """Get the ordered list of required input names for a node type."""
+    """Get the ordered list of input names for a node type."""
     if node_type in _node_input_cache:
         return _node_input_cache[node_type]
 
+    names = [spec["name"] for spec in _get_node_input_specs(node_type)]
+    _node_input_cache[node_type] = names
+    return names
+
+
+def _get_node_input_specs(node_type: str) -> list[dict]:
+    """Get ordered input metadata from a ComfyUI node class."""
+    if node_type in _node_input_spec_cache:
+        return _node_input_spec_cache[node_type]
+
     try:
-        # Scan node registration for this type
-        sys.path.insert(0, str(Path(__file__).parent.parent))
+        _ensure_import_path()
         from comfyui_awp_rp.nodes import NODE_CLASS_MAPPINGS
         cls = NODE_CLASS_MAPPINGS.get(node_type)
         if cls and hasattr(cls, "INPUT_TYPES"):
             input_types = cls.INPUT_TYPES()
-            required = input_types.get("required", {})
-            # Ordered names (Python 3.7+ dicts preserve insertion order)
-            names = list(required.keys())
-            _node_input_cache[node_type] = names
-            return names
+            specs = []
+            for section in ("required", "optional"):
+                for name, raw_spec in (input_types.get(section, {}) or {}).items():
+                    value_type, meta = _parse_input_spec(raw_spec)
+                    specs.append({
+                        "name": name,
+                        "section": section,
+                        "value_type": value_type,
+                        "meta": meta,
+                        "force_input": bool(meta.get("forceInput")),
+                        "default": meta.get("default"),
+                    })
+            _node_input_spec_cache[node_type] = specs
+            return specs
     except Exception:
         pass
 
-    _node_input_cache[node_type] = []
+    _node_input_spec_cache[node_type] = []
     return []
+
+
+def _parse_input_spec(raw_spec: object) -> tuple[object, dict]:
+    if isinstance(raw_spec, tuple) and raw_spec:
+        value_type = raw_spec[0]
+        meta = raw_spec[1] if len(raw_spec) > 1 and isinstance(raw_spec[1], dict) else {}
+        return value_type, meta
+    return raw_spec, {}
+
+
+def _map_node_inputs(node: dict, link_map: dict[tuple[int, int], tuple[int, int]]) -> dict[str, object]:
+    node_id = node["id"]
+    raw_inputs = node.get("inputs") or []
+    widgets = node.get("widgets_values") or []
+    specs = _get_node_input_specs(node.get("type", ""))
+
+    linked_inputs: dict[str, object] = {}
+    linked_raw_names: set[str] = set()
+    raw_input_names: list[str] = []
+    for slot_idx, inp in enumerate(raw_inputs):
+        inp_name = inp.get("name", f"slot_{slot_idx}")
+        raw_input_names.append(inp_name)
+        link_src = link_map.get((node_id, slot_idx))
+        if link_src is not None:
+            linked_inputs[inp_name] = [str(link_src[0]), link_src[1]]
+            linked_raw_names.add(inp_name)
+
+    if not specs:
+        return _map_unknown_node_inputs(raw_inputs, widgets, linked_inputs)
+
+    spec_names = [spec["name"] for spec in specs]
+    candidate_orders = [
+        spec_names,
+        [name for name in spec_names if name not in linked_raw_names],
+        [spec["name"] for spec in specs if not spec["force_input"]],
+    ]
+
+    best_inputs: dict[str, object] | None = None
+    best_score: int | None = None
+    for order in candidate_orders:
+        candidate = _build_input_candidate(specs, order, widgets, linked_inputs)
+        score = _score_input_candidate(specs, candidate)
+        if best_score is None or score > best_score:
+            best_score = score
+            best_inputs = candidate
+
+    return best_inputs or dict(linked_inputs)
+
+
+def _map_unknown_node_inputs(raw_inputs: list[dict], widgets: list, linked_inputs: dict[str, object]) -> dict[str, object]:
+    node_inputs = dict(linked_inputs)
+    if raw_inputs:
+        for slot_idx, inp in enumerate(raw_inputs):
+            inp_name = inp.get("name", f"slot_{slot_idx}")
+            if inp_name not in node_inputs and slot_idx < len(widgets):
+                node_inputs[inp_name] = _coerce_widget(widgets[slot_idx])
+    elif widgets:
+        node_inputs["text"] = _coerce_widget(widgets[0])
+    return node_inputs
+
+
+def _build_input_candidate(
+    specs: list[dict],
+    widget_order: list[str],
+    widgets: list,
+    linked_inputs: dict[str, object],
+) -> dict[str, object]:
+    candidate: dict[str, object] = {}
+    for idx, name in enumerate(widget_order):
+        if idx >= len(widgets):
+            break
+        candidate[name] = _coerce_widget(widgets[idx])
+
+    candidate.update(linked_inputs)
+
+    for spec in specs:
+        name = spec["name"]
+        if name not in candidate and (spec["section"] == "required" or spec["force_input"]):
+            if spec["default"] is not None:
+                candidate[name] = spec["default"]
+    return candidate
+
+
+def _score_input_candidate(specs: list[dict], candidate: dict[str, object]) -> int:
+    score = 0
+    for spec in specs:
+        name = spec["name"]
+        if name not in candidate:
+            if spec["section"] == "required":
+                score -= 100
+            continue
+        score += _score_input_value(spec, candidate[name])
+    return score
+
+
+def _score_input_value(spec: dict, value: object) -> int:
+    if _is_link_value(value):
+        return 8
+
+    value_type = spec["value_type"]
+    if isinstance(value_type, (list, tuple)):
+        return 12 if value in value_type else -40
+    if value_type == "BOOLEAN":
+        return 8 if isinstance(value, bool) else -20
+    if value_type == "INT":
+        return 8 if isinstance(value, int) and not isinstance(value, bool) else -20
+    if value_type == "FLOAT":
+        return 8 if isinstance(value, (int, float)) and not isinstance(value, bool) else -20
+    if value_type == "STRING":
+        return 6 if isinstance(value, str) else 1
+    return 1
+
+
+def _is_link_value(value: object) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) >= 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], int)
+    )
 
 
 def inject_inputs(workflow: dict, input_values: dict[str, list]) -> dict:
@@ -277,10 +475,42 @@ def call_comfyui(prompt: dict) -> dict:
             continue
 
         if prompt_id in history:
-            outputs = _extract_outputs(history[prompt_id])
+            history_entry = history[prompt_id]
+            if not _history_completed(history_entry):
+                continue
+            error = _history_error(history_entry)
+            if error:
+                return {"ok": False, "prompt_id": prompt_id, "error": error}
+            outputs = _extract_outputs(history_entry)
             return {"ok": True, "prompt_id": prompt_id, "outputs": outputs}
 
     return {"ok": False, "error": "Timeout waiting for ComfyUI response"}
+
+
+def _history_completed(history_entry: dict) -> bool:
+    status = history_entry.get("status") or {}
+    if "completed" in status:
+        return bool(status.get("completed"))
+    return True
+
+
+def _history_error(history_entry: dict) -> str | None:
+    status = history_entry.get("status") or {}
+    status_str = str(status.get("status_str") or status.get("status") or "").lower()
+    if status_str not in {"error", "failed", "failure"}:
+        return None
+
+    for message in status.get("messages") or []:
+        payload = None
+        if isinstance(message, (list, tuple)) and len(message) > 1:
+            payload = message[1]
+        elif isinstance(message, dict):
+            payload = message
+        if isinstance(payload, dict):
+            for key in ("exception_message", "error", "message"):
+                if payload.get(key):
+                    return str(payload[key])
+    return "ComfyUI execution failed"
 
 
 def _extract_outputs(history_entry: dict) -> dict[str, str]:
@@ -426,8 +656,13 @@ def analyze_workflow(filename: str) -> dict | None:
     if not wf:
         return None
 
-    nodes = wf.get("nodes", [])
-    links = wf.get("links", [])
+    if _is_api_prompt_format(wf):
+        prompt = _unwrap_api_prompt(wf)
+        nodes = _api_prompt_nodes(prompt)
+        links = _api_prompt_links(prompt)
+    else:
+        nodes = wf.get("nodes", [])
+        links = wf.get("links", [])
 
     # Build node type lookup
     node_types: dict[int, str] = {n["id"]: n.get("type", "") for n in nodes}
@@ -455,6 +690,22 @@ def analyze_workflow(filename: str) -> dict | None:
 
         # For text input nodes, disambiguate by downstream
         if ntype in ("AWPTextInput",):
+            title_role = _role_from_title(node.get("title", ""))
+            if title_role:
+                roles.append({
+                    "role": title_role,
+                    "label": {"session_id": "会话ID", "card_id": "角色卡ID", "user_input": "用户输入"}.get(title_role, title_role),
+                    "node_id": nid,
+                    "node_type": ntype,
+                    "confidence": "high",
+                    "input_type": "textarea" if title_role == "user_input" else "text",
+                })
+                if title_role == "session_id":
+                    roles[-1]["options_from"] = "/api/sessions"
+                elif title_role == "card_id":
+                    roles[-1]["options_from"] = "/api/cards"
+                continue
+
             downstream_ids = _get_downstream_types(nid, links)
             role = None
             for d_id in downstream_ids:
@@ -489,6 +740,17 @@ def analyze_workflow(filename: str) -> dict | None:
     }
 
 
+def _role_from_title(title: str) -> str | None:
+    lower = title.lower()
+    if "user input" in lower or "用户输入" in title or "玩家输入" in title:
+        return "user_input"
+    if "session" in lower or "会话" in title:
+        return "session_id"
+    if ("card id" in lower or "角色卡id" in lower or "角色卡ID" in title) and "json" not in lower and "JSON" not in title:
+        return "card_id"
+    return None
+
+
 def _roles_to_injections(workflow: dict, roles: dict, analysis: dict) -> tuple[dict[str, list], dict[str, dict]]:
     """Convert role-based values to node injections.
     
@@ -496,9 +758,12 @@ def _roles_to_injections(workflow: dict, roles: dict, analysis: dict) -> tuple[d
     widget_injections: {node_id: [value, ...]}  for leaf node widgets
     api_overrides: {node_id: {input_name: value}} for non-leaf node input overrides
     """
-    role_map = {r["role"]: r for r in analysis.get("roles", [])}
+    role_map = {}
+    for role in analysis.get("roles", []):
+        role_map.setdefault(role["role"], role)
     widgets: dict[str, list] = {}
     overrides: dict[str, dict] = {}
+    api_prompt = _is_api_prompt_format(workflow)
 
     for role_name, role_value in roles.items():
         info = role_map.get(role_name)
@@ -508,6 +773,10 @@ def _roles_to_injections(workflow: dict, roles: dict, analysis: dict) -> tuple[d
 
         if role_name == "generator" and isinstance(role_value, dict):
             overrides[nid] = role_value
+        elif api_prompt:
+            input_name = _role_input_name(info["node_type"], role_name)
+            if input_name:
+                overrides.setdefault(nid, {})[input_name] = str(role_value)
         elif role_name == "preset":
             widgets.setdefault(nid, [None])
             widgets[nid][0] = role_value
@@ -516,6 +785,18 @@ def _roles_to_injections(workflow: dict, roles: dict, analysis: dict) -> tuple[d
             widgets[nid][0] = str(role_value)
 
     return widgets, overrides
+
+
+def _role_input_name(node_type: str, role_name: str) -> str | None:
+    if node_type == "AWPTextInput":
+        return "text"
+    if node_type == "AWPJsonInput":
+        return "json_text"
+    if node_type == "AWPPreset" or role_name == "preset":
+        return "preset_id"
+    if role_name in {"user_input", "session_id", "card_id"}:
+        return role_name
+    return None
 
 
 def convert_to_api_format_with_overrides(workflow: dict, overrides: dict[str, dict]) -> dict:
@@ -561,6 +842,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if result is None:
                 return self._json({"error": "Workflow not found"}, 404)
             return self._json(result)
+
+        if path == "/favicon.ico":
+            self.path = "/favicon.svg"
+            return super().do_GET()
 
         # Fallback: serve static files (SPA routing)
         # Check if the request looks like an API call (starts with /api/) or a static file request
@@ -631,20 +916,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors_headers()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def _send_cors_headers(self):
+        origin = self.headers.get("Origin", "")
+        if origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
 if __name__ == "__main__":
     print(f"\n  Workflow Runner Bridge")
-    print(f"  Frontend: http://localhost:{PORT}")
+    print(f"  Frontend: http://{HOST}:{PORT}")
     print(f"  ComfyUI:  {COMFYUI_URL}")
 
     # Pre-import all modules to avoid import deadlocks in threaded handler
@@ -663,7 +954,7 @@ if __name__ == "__main__":
         print(f"  Some API endpoints may fail on first request")
 
     print(f"  Ctrl+C to stop\n")
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+    server = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
