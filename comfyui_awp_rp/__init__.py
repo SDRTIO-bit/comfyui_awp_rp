@@ -45,6 +45,27 @@ def _register_routes():
 
         prompt_server = server.PromptServer.instance
 
+        @prompt_server.routes.get("/awp/i18n")
+        async def get_i18n(_request):
+            """Return the zh-CN display-layer catalog for the frontend.
+
+            Reflects all node INPUT_TYPES at request time and merges with the
+            translation dictionary. Display-only; internal identifiers stay
+            English. Failures return an empty catalog so the JS fallback kicks in.
+            """
+            try:
+                from .i18n import build_i18n_catalog
+                return web.json_response(build_i18n_catalog())
+            except Exception as exc:  # noqa: BLE001
+                return web.json_response({
+                    "nodeCount": 0,
+                    "widgetLabels": {},
+                    "portLabels": {},
+                    "combos": {},
+                    "menuLabels": {},
+                    "error": str(exc),
+                })
+
         @prompt_server.routes.get("/awp/providers")
         async def get_providers(_request):
             from .core.config import get_config
