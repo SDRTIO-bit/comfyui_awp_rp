@@ -27,6 +27,7 @@ def _values_already_chinese(values):
 
 
 def _has_cjk(text):
+    """Check if text contains any CJK characters (U+4E00 to U+9FFF)."""
     return any("一" <= ch <= "鿿" for ch in text)
 
 
@@ -59,7 +60,7 @@ def build_i18n_catalog():
             # A node that can't be reflected at import time is skipped, not fatal.
             continue
         for section in ("required", "optional"):
-            section_def = input_types.get(section, {}) or {}
+            section_def = input_types.get(section, {})
             for field_name, spec in section_def.items():
                 if not _is_combo_value_list(spec):
                     continue
