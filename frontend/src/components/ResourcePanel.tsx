@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { ResourceType, CardMeta, SessionMeta, WorldbookEntry, PresetMeta, WorkflowMeta } from '../types'
 
 const LABELS: Record<ResourceType, string> = {
@@ -24,6 +25,8 @@ interface Props {
   onSelectSession: (id: string) => void
   onSelectPreset: (id: string) => void
   onSelectWorkflow: (filename: string) => void
+  onImportCard: () => void
+  onEditCard: (id: string) => void
   onClose: () => void
 }
 
@@ -43,6 +46,8 @@ export default function ResourcePanel({
   onSelectSession,
   onSelectPreset,
   onSelectWorkflow,
+  onImportCard,
+  onEditCard,
   onClose,
 }: Props) {
   if (!open || !type) return null
@@ -54,7 +59,7 @@ export default function ResourcePanel({
         <button type="button" className="bg-transparent border-none text-sm text-[var(--color-text-3)] cursor-pointer px-1" onClick={onClose} aria-label="关闭资源面板">×</button>
       </div>
       <div className="flex-1 overflow-y-auto p-1.5">
-        {type === 'cards' && <CardList cards={cards} activeId={activeCardId} onSelect={onSelectCard} />}
+        {type === 'cards' && <CardList cards={cards} activeId={activeCardId} onSelect={onSelectCard} onImport={onImportCard} onEdit={onEditCard} />}
         {type === 'sessions' && <SessionList sessions={sessions} activeId={activeSessionId} onSelect={onSelectSession} />}
         {type === 'worldbook' && <WorldbookList entries={worldbookEntries} />}
         {type === 'presets' && <PresetList presets={presets} activeId={activePresetId} onSelect={onSelectPreset} />}
@@ -64,27 +69,45 @@ export default function ResourcePanel({
   )
 }
 
-function CardList({ cards, activeId, onSelect }: { cards: CardMeta[]; activeId: string; onSelect: (id: string) => void }) {
-  if (cards.length === 0) return <div className="text-xs text-[var(--color-text-3)] italic p-3">暂无角色卡</div>
+function CardList({ cards, activeId, onSelect, onImport, onEdit }: { cards: CardMeta[]; activeId: string; onSelect: (id: string) => void; onImport: () => void; onEdit: (id: string) => void }) {
   return (
     <>
+      <div className="px-2 py-2">
+        <button
+          type="button"
+          className="w-full bg-[var(--color-accent-dim)] text-[var(--color-text)] text-xs py-2 px-3 rounded hover:bg-[var(--color-accent)] transition-colors cursor-pointer"
+          onClick={onImport}
+        >
+          + 导入角色卡
+        </button>
+      </div>
+      {cards.length === 0 && <div className="text-xs text-[var(--color-text-3)] italic p-3">暂无角色卡，点击上方按钮导入。</div>}
       {cards.map(card => (
         <div key={card.card_id} className="mb-3 px-1">
-          <button
-            type="button"
-            className={`w-full text-left text-[13px] font-medium py-1.5 px-2 rounded cursor-pointer ${card.card_id === activeId ? 'bg-[var(--color-accent-soft)] text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-hover)]'}`}
-            onClick={() => onSelect(card.card_id)}
-            aria-pressed={card.card_id === activeId}
-          >
-            {card.manifest.name}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={`flex-1 text-left text-[13px] font-medium py-1.5 px-2 rounded cursor-pointer ${card.card_id === activeId ? 'bg-[var(--color-accent-soft)] text-[var(--color-text)]' : 'text-[var(--color-text)] hover:bg-[var(--color-bg-hover)]'}`}
+              onClick={() => onSelect(card.card_id)}
+              aria-pressed={card.card_id === activeId}
+            >
+              {card.manifest.name}
+            </button>
+            <button
+              type="button"
+              className="text-[11px] text-[var(--color-text-3)] hover:text-[var(--color-accent)] px-1.5 py-1 rounded hover:bg-[var(--color-bg-hover)] transition-colors"
+              onClick={() => onEdit(card.card_id)}
+              title="编辑角色卡"
+            >
+              ✎
+            </button>
+          </div>
           <div className="text-[11px] text-[var(--color-text-3)] flex flex-col gap-0.5 py-0.5 px-2 pl-5">
             <span>世界书：{card.manifest.worldbook_entry_count} 条</span>
             {card.manifest.description && <span className="truncate">{card.manifest.description}</span>}
           </div>
         </div>
       ))}
-      <div className="text-xs text-[var(--color-text-3)] italic px-3 py-2.5">导入新角色卡需要先在 ComfyUI 侧完成。</div>
     </>
   )
 }
@@ -130,14 +153,24 @@ function WorldbookList({ entries }: { entries: WorldbookEntry[] }) {
 }
 
 function WbEntry({ entry, mode }: { entry: WorldbookEntry; mode: string }) {
+  const [expanded, setExpanded] = useState(false)
   const borderCls = mode === 'const' ? 'border-l-[var(--color-ok)]' : mode === 'select' ? 'border-l-[var(--color-accent-dim)]' : 'border-l-transparent opacity-50'
   return (
     <div className={`py-2 px-2.5 rounded mb-px transition-colors border-l-2 ${borderCls} hover:bg-[var(--color-bg-hover)]`}>
       <div className="flex items-center gap-1.5 text-xs mb-0.5">
-        <span className="text-[var(--color-text)] font-medium">{entry.title || '(untitled)'}</span>
-        <span className="text-[10px] text-[var(--color-text-3)]">p={entry.priority}</span>
+        <button
+          type="button"
+          className="flex-1 text-left flex items-center gap-1.5 cursor-pointer bg-transparent border-none p-0"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className="text-[var(--color-text)] font-medium">{entry.title || '(untitled)'}</span>
+          <span className="text-[10px] text-[var(--color-text-3)]">p={entry.priority}</span>
+          <span className="text-[10px] text-[var(--color-text-3)] ml-auto">{expanded ? '▼' : '▶'}</span>
+        </button>
       </div>
-      <div className="text-[11px] text-[var(--color-text-3)] leading-snug line-clamp-2">{entry.content}</div>
+      <div className={`text-[11px] text-[var(--color-text-3)] leading-snug ${expanded ? '' : 'line-clamp-2'}`}>
+        {entry.content}
+      </div>
       {entry.tags.length > 0 && <div className="text-[10px] text-[var(--color-accent-dim)] mt-1">关键词：{entry.tags.join(', ')}</div>}
     </div>
   )

@@ -1,0 +1,180 @@
+{
+  "1": {
+    "class_type": "AWPTextInput",
+    "inputs": {
+      "text": ""
+    },
+    "_meta": {
+      "title": "用户输入"
+    }
+  },
+  "2": {
+    "class_type": "AWPTextInput",
+    "inputs": {
+      "text": "default"
+    },
+    "_meta": {
+      "title": "会话ID"
+    }
+  },
+  "3": {
+    "class_type": "AWPTextInput",
+    "inputs": {
+      "text": ""
+    },
+    "_meta": {
+      "title": "角色卡ID"
+    }
+  },
+  "4": {
+    "class_type": "AWPJsonInput",
+    "inputs": {
+      "json_text": "{}",
+      "validate_json": true
+    },
+    "_meta": {
+      "title": "场景状态"
+    }
+  },
+  "5": {
+    "class_type": "AWPCardSelect",
+    "inputs": {
+      "card_id": ["3", 0]
+    }
+  },
+  "6": {
+    "class_type": "AWPPreset",
+    "inputs": {
+      "preset_id": "long-narrative-v1"
+    }
+  },
+  "7": {
+    "class_type": "AWPSessionLoad",
+    "inputs": {
+      "session_id": ["2", 0],
+      "include_history": true
+    }
+  },
+  "8": {
+    "class_type": "AWPMemoryRead",
+    "inputs": {
+      "namespace": ["2", 0],
+      "tags_any": "",
+      "type_filter": "",
+      "limit": 10
+    }
+  },
+  "9": {
+    "class_type": "AWPRoundPreparer",
+    "inputs": {
+      "user_input": ["1", 0],
+      "session_id": ["2", 0],
+      "current_variables": ["4", 0],
+      "worldbook_index": ["5", 2],
+      "memory_context": ["8", 1],
+      "var_diff": "{}",
+      "authors_note": "",
+      "character_note": "",
+      "injection_rules_json": "[]",
+      "project_root": "",
+      "chapter_num": 0,
+      "story_genre": "",
+      "target_tokens": 4000,
+      "top_worldbook": 4
+    }
+  },
+  "10": {
+    "class_type": "AWPMainAgent",
+    "inputs": {
+      "user_input": ["9", 0],
+      "session_id": ["2", 0],
+      "provider": "deepseek",
+      "model": "deepseek-chat",
+      "profile": "rp-writer",
+      "context_mode": "full_context",
+      "record_session": true,
+      "worldbook_context": ["5", 2],
+      "card_id": ["3", 0],
+      "memory_context": ["8", 1],
+      "preset_id": "long-narrative-v1",
+      "temperature": 0.85,
+      "max_tokens": 2048,
+      "enable_agent_loop": true,
+      "max_iterations": 5,
+      "tool_ids": "",
+      "skill_ids": "rp_thinking_flow,hard_gates_full",
+      "current_variables": ["4", 0]
+    },
+    "_meta": {
+      "title": "主Agent"
+    }
+  },
+  "11": {
+    "class_type": "AWPMVUNode",
+    "inputs": {
+      "ai_output": ["10", 0],
+      "current_variables": ["4", 0],
+      "session_id": ["2", 0],
+      "card_id": ["3", 0],
+      "enable_extraction": true,
+      "enable_macro_resolution": true
+    }
+  },
+  "12": {
+    "class_type": "AWPMVUMacroResolver",
+    "inputs": {
+      "text": ["10", 0],
+      "variables_json": ["11", 0]
+    }
+  },
+  "13": {
+    "class_type": "AWPQualityGate",
+    "inputs": {
+      "text": ["12", 0],
+      "strict_mode": false
+    }
+  },
+  "14": {
+    "class_type": "AWPOutputRenderer",
+    "inputs": {
+      "narrative_text": ["13", 0],
+      "metadata_json": ["10", 2],
+      "format": "text"
+    }
+  },
+  "15": {
+    "class_type": "AWPTextOutput",
+    "inputs": {
+      "text": ["14", 0]
+    },
+    "_meta": {
+      "title": "回复文本"
+    }
+  },
+  "16": {
+    "class_type": "AWPJsonOutput",
+    "inputs": {
+      "json_text": ["11", 0]
+    },
+    "_meta": {
+      "title": "变量状态"
+    }
+  },
+  "17": {
+    "class_type": "AWPJsonOutput",
+    "inputs": {
+      "json_text": ["10", 2]
+    },
+    "_meta": {
+      "title": "元数据"
+    }
+  },
+  "18": {
+    "class_type": "AWPSessionSave",
+    "inputs": {
+      "session_id": ["2", 0],
+      "context_json": ["10", 1],
+      "force_save": false
+    }
+  }
+}

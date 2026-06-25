@@ -39,8 +39,8 @@ def list_workflows() -> list[dict]:
                 prompt = _unwrap_api_prompt(wf)
                 nodes = _api_prompt_nodes(prompt)
                 links = _api_prompt_links(prompt)
-                inputs = []
-                outputs = []
+                inputs = _discover_inputs_api(prompt)
+                outputs = _discover_outputs_api(prompt)
             else:
                 nodes = wf.get("nodes", [])
                 links = wf.get("links", [])
@@ -112,6 +112,81 @@ def _discover_outputs(nodes: list[dict], links: list[dict]) -> list[dict]:
                 "node_id": node["id"],
                 "type": node.get("type", "Unknown"),
                 "title": node.get("title", ""),
+                "output_names": output_names,
+            })
+    return result
+
+
+def _discover_inputs_api(prompt: dict) -> list[dict]:
+    """Find input nodes in API format: nodes with literal inputs (not references)."""
+    result = []
+    for node_id, node in prompt.items():
+        ntype = node.get("class_type", "Unknown")
+        inputs = node.get("inputs", {})
+        
+        # Check if all inputs are literal values (not references)
+        has_references = False
+        fields = []
+        field_idx = 0
+        
+        for inp_name, inp_value in inputs.items():
+            # References are lists like ["node_id", output_index]
+            if isinstance(inp_value, list) and len(inp_value) == 2 and isinstance(inp_value[0], (str, int)):
+                has_references = True
+                continue
+            
+            # This is a literal value
+            if isinstance(inp_value, bool):
+                fields.append({"index": field_idx, "label": inp_name, "type": "bool", "default": inp_value})
+            elif isinstance(inp_value, (int, float)):
+                fields.append({"index": field_idx, "label": inp_name, "type": "number", "default": inp_value})
+            elif isinstance(inp_value, str):
+                fields.append({"index": field_idx, "label": inp_name, "type": "text", "default": inp_value})
+            field_idx += 1
+        
+        # Only include if has literal inputs and no references
+        if fields and not has_references:
+            title = (node.get("_meta") or {}).get("title", "")
+            result.append({
+                "node_id": node_id,
+                "type": ntype,
+                "title": title,
+                "fields": fields,
+            })
+    return result
+
+
+def _discover_outputs_api(prompt: dict) -> list[dict]:
+    """Find output nodes in API format: nodes that are not referenced by others."""
+    # Build set of node IDs that are referenced
+    referenced = set()
+    for node_id, node in prompt.items():
+        inputs = node.get("inputs", {})
+        for inp_value in inputs.values():
+            if isinstance(inp_value, list) and len(inp_value) == 2 and isinstance(inp_value[0], (str, int)):
+                referenced.add(str(inp_value[0]))
+    
+    # Output nodes are those not referenced by others
+    result = []
+    for node_id, node in prompt.items():
+        if node_id not in referenced:
+            ntype = node.get("class_type", "Unknown")
+            title = (node.get("_meta") or {}).get("title", "")
+            # Guess output names from class type
+            output_names = []
+            if 'Output' in ntype or 'output' in ntype.lower():
+                output_names = ['output']
+            elif 'Session' in ntype and 'Save' in ntype:
+                output_names = ['status']
+            elif 'Project' in ntype and 'Save' in ntype:
+                output_names = ['project_id', 'status']
+            else:
+                output_names = ['result']
+            
+            result.append({
+                "node_id": node_id,
+                "type": ntype,
+                "title": title,
                 "output_names": output_names,
             })
     return result
@@ -518,7 +593,20 @@ def _extract_outputs(history_entry: dict) -> dict[str, str]:
     outputs = {}
     for node_id, node_data in history_entry.get("outputs", {}).items():
         if isinstance(node_data, dict):
+            # 处理 ComfyUI 的 ui 输出格式
+            if "ui" in node_data:
+                ui_data = node_data["ui"]
+                if isinstance(ui_data, dict):
+                    # 查找 text 字段
+                    if "text" in ui_data:
+                        text_list = ui_data["text"]
+                        if isinstance(text_list, list) and text_list:
+                            outputs[f"{node_id}/text"] = str(text_list[0])
+            
+            # 处理标准输出格式
             for output_name, output_list in node_data.items():
+                if output_name == "ui":
+                    continue
                 if isinstance(output_list, list) and output_list:
                     item = output_list[0]
                     if isinstance(item, dict) and "text" in item:
@@ -543,6 +631,119 @@ def list_cards() -> list[dict]:
     from comfyui_awp_rp.card.import_card import CardImporter
     importer = CardImporter()
     return importer.list_cards()
+
+
+def scan_avatars_dir() -> list[dict]:
+    """Scan data/avatars/ directory for character card files."""
+    avatars_dir = Path(__file__).parent.parent / "data" / "avatars"
+    if not avatars_dir.exists():
+        avatars_dir.mkdir(parents=True, exist_ok=True)
+        return []
+    
+    results = []
+    for f in sorted(avatars_dir.iterdir()):
+        if f.suffix.lower() in (".json", ".png"):
+            stat = f.stat()
+            results.append({
+                "filename": f.name,
+                "path": str(f),
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
+            })
+    return results
+
+
+def import_card_from_file(filepath: str) -> dict:
+    """Import a character card from file path."""
+    _ensure_import_path()
+    from comfyui_awp_rp.card.import_card import CardImporter, load_card_json_from_file
+    
+    try:
+        card_data = load_card_json_from_file(filepath)
+        importer = CardImporter()
+        result = importer.import_card(card_data)
+        return {
+            "ok": True,
+            "card_id": result.card_id,
+            "name": result.manifest.name,
+            "already_existed": result.already_existed,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def import_card_from_upload(filename: str, file_data: bytes) -> dict:
+    """Import a character card from uploaded file data."""
+    avatars_dir = Path(__file__).parent.parent / "data" / "avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save file to avatars directory
+    filepath = avatars_dir / filename
+    filepath.write_bytes(file_data)
+    
+    # Import from saved file
+    return import_card_from_file(str(filepath))
+
+
+def update_card_greetings(card_id: str, greetings: list[dict]) -> dict:
+    """Update greetings for a character card."""
+    _ensure_import_path()
+    from comfyui_awp_rp.core.store import get_store
+    
+    try:
+        store = get_store()
+        card = store.load_card(card_id)
+        if not card:
+            return {"ok": False, "error": "Card not found"}
+        
+        # Update greetings
+        store.save_card(
+            card_id=card_id,
+            manifest=card["manifest"],
+            greetings=greetings,
+            worldbook=card["worldbook"],
+            deferred=card.get("deferred_worldbook", []),
+            report=card.get("import_report", {}),
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def update_card_worldbook(card_id: str, worldbook: list[dict]) -> dict:
+    """Update worldbook entries for a character card."""
+    _ensure_import_path()
+    from comfyui_awp_rp.core.store import get_store
+    
+    try:
+        store = get_store()
+        card = store.load_card(card_id)
+        if not card:
+            return {"ok": False, "error": "Card not found"}
+        
+        # Update worldbook
+        store.save_card(
+            card_id=card_id,
+            manifest=card["manifest"],
+            greetings=card["greetings"],
+            worldbook=worldbook,
+            deferred=card.get("deferred_worldbook", []),
+            report=card.get("import_report", {}),
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def get_card_greetings(card_id: str) -> list[dict]:
+    """Get greetings for a card."""
+    _ensure_import_path()
+    from comfyui_awp_rp.card.import_card import CardImporter
+    importer = CardImporter()
+    card = importer.get_card(card_id)
+    if not card:
+        return []
+    return card.get("greetings", [])
 
 
 def get_card_worldbook(card_id: str) -> list[dict]:
@@ -592,6 +793,42 @@ def list_sessions() -> list[dict]:
     return result
 
 
+def get_session_history(session_id: str) -> dict:
+    """Get session history with turns."""
+    _ensure_import_path()
+    from comfyui_awp_rp.memory.short_term import AgentSessionManager
+    
+    try:
+        manager = AgentSessionManager()
+        key = manager.create_key(
+            tenant_id="default",
+            workflow_instance_id="comfyui-rp",
+            conversation_id=session_id,
+            agent_node_id="main-agent",
+        )
+        
+        # 获取会话上下文
+        turns, summary, truncated = manager.get_prompt_context(key, protected_tokens=0)
+        
+        # 转换为前端需要的格式
+        turn_list = []
+        for turn in turns:
+            turn_list.append({
+                "index": turn.turn_index,
+                "action": str(turn.input) if turn.input else "",
+                "narrative": str(turn.assistant_output) if turn.assistant_output else "",
+            })
+        
+        return {
+            "turns": turn_list,
+            "turn_count": len(turn_list),
+            "summary": summary,
+            "truncated": truncated,
+        }
+    except Exception as e:
+        return {"turns": [], "turn_count": 0, "error": str(e)}
+
+
 def list_presets() -> list[dict]:
     """List available RP presets."""
     _ensure_import_path()
@@ -632,6 +869,9 @@ DIRECT_ROLES = {
     "AWPMainAgent": "generator",
     "AWPJsonInput": "json_input",
 }
+
+# 节点类型是否支持 Agent Loop
+AGENT_LOOP_NODES = {"AWPMainAgent"}
 
 
 def _get_downstream_types(node_id: int, links: list) -> set[str]:
@@ -684,7 +924,12 @@ def analyze_workflow(filename: str) -> dict | None:
                 "confidence": "high",
                 "input_type": "textarea" if ntype == "AWPJsonInput" else "select" if ntype == "AWPPreset" else "text",
             })
-            if ntype == "AWPDialogueDirector" or ntype == "AWPMainAgent":
+            # 标记是否支持 Agent Loop
+            if ntype in AGENT_LOOP_NODES:
+                roles[-1]["supports_agent_loop"] = True
+                roles[-1]["override_inputs"] = ["provider", "model", "profile", "temperature", "max_tokens", "context_mode", "preset_id", "enable_agent_loop", "max_iterations", "skill_ids"]
+            elif ntype == "AWPDialogueDirector":
+                roles[-1]["supports_agent_loop"] = False
                 roles[-1]["override_inputs"] = ["provider", "model", "temperature", "max_tokens", "context_mode"]
             continue
 
@@ -825,6 +1070,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json({"status": "ok", "comfyui": COMFYUI_URL})
         if path == "/api/cards":
             return self._json(list_cards())
+        if path == "/api/avatars":
+            return self._json(scan_avatars_dir())
         if path == "/api/sessions":
             return self._json(list_sessions())
         if path == "/api/presets":
@@ -835,6 +1082,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         # Parameterized routes
         if path.startswith("/api/worldbook/"):
             card_id = path.split("/api/worldbook/")[-1]
+            return self._json(get_card_worldbook(card_id))
+        if path.startswith("/api/session/"):
+            session_id = path.split("/api/session/")[-1]
+            return self._json(get_session_history(session_id))
+        if path.startswith("/api/cards/") and path.endswith("/greetings"):
+            card_id = path.split("/api/cards/")[-1].replace("/greetings", "")
+            return self._json(get_card_greetings(card_id))
+        if path.startswith("/api/cards/") and path.endswith("/worldbook"):
+            card_id = path.split("/api/cards/")[-1].replace("/worldbook", "")
             return self._json(get_card_worldbook(card_id))
         if path.startswith("/api/workflows/") and path.endswith("/analyze"):
             fname = path.split("/api/workflows/")[-1].replace("/analyze", "")
@@ -857,6 +1113,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        
+        # Handle file upload for card import
+        if path == "/api/cards/import":
+            return self._handle_card_import()
+        
+        # Handle JSON body requests
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
         try:
@@ -864,13 +1127,85 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except json.JSONDecodeError:
             data = {}
 
-        if parsed.path == "/api/run":
+        if path == "/api/run":
             self._handle_run(data)
-        elif parsed.path == "/api/run-roles":
+        elif path == "/api/run-roles":
             self._handle_run_roles(data)
+        elif path.startswith("/api/cards/") and path.endswith("/greetings"):
+            card_id = path.split("/api/cards/")[-1].replace("/greetings", "")
+            result = update_card_greetings(card_id, data.get("greetings", []))
+            self._json(result)
+        elif path.startswith("/api/cards/") and path.endswith("/worldbook"):
+            card_id = path.split("/api/cards/")[-1].replace("/worldbook", "")
+            result = update_card_worldbook(card_id, data.get("worldbook", []))
+            self._json(result)
         else:
             self._json({"error": "not found"}, 404)
 
+    def _handle_card_import(self):
+        """Handle multipart file upload for card import."""
+        content_type = self.headers.get("Content-Type", "")
+        
+        if "multipart/form-data" not in content_type:
+            self._json({"ok": False, "error": "Expected multipart/form-data"})
+            return
+        
+        # Parse boundary
+        boundary = None
+        for part in content_type.split(";"):
+            part = part.strip()
+            if part.startswith("boundary="):
+                boundary = part[9:].strip('"')
+                break
+        
+        if not boundary:
+            self._json({"ok": False, "error": "No boundary in Content-Type"})
+            return
+        
+        # Read multipart body
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length)
+        
+        # Parse multipart (simple implementation)
+        boundary_bytes = boundary.encode()
+        parts = body.split(b"--" + boundary_bytes)
+        
+        filename = None
+        file_data = None
+        
+        for part in parts[1:]:  # Skip first empty part
+            if b"\r\n\r\n" not in part:
+                continue
+            
+            header_end = part.index(b"\r\n\r\n")
+            headers_raw = part[:header_end].decode("utf-8", errors="replace")
+            content = part[header_end + 4:]
+            
+            # Remove trailing boundary marker
+            if content.endswith(b"\r\n"):
+                content = content[:-2]
+            
+            # Extract filename from Content-Disposition
+            if "filename=" in headers_raw:
+                for line in headers_raw.split("\r\n"):
+                    if "filename=" in line:
+                        fname_start = line.index("filename=") + 9
+                        filename = line[fname_start:].strip('"')
+                        file_data = content
+                        break
+        
+        if not filename or not file_data:
+            self._json({"ok": False, "error": "No file found in upload"})
+            return
+        
+        # Validate file type
+        if not filename.lower().endswith((".json", ".png")):
+            self._json({"ok": False, "error": "Only .json and .png files are supported"})
+            return
+        
+        result = import_card_from_upload(filename, file_data)
+        self._json(result)
+    
     def _handle_run(self, data: dict):
         filename = data.get("workflow", "")
         input_values = data.get("inputs", {})

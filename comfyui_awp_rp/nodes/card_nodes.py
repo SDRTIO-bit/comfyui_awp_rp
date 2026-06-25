@@ -10,20 +10,25 @@ from ..card.greeting import GreetingManager
 
 
 class AWPCardImport:
-    """导入 SillyTavern V3 角色卡。"""
+    """导入 SillyTavern V3 角色卡。
+    
+    支持两种方式：
+    1. 文件路径（推荐）：填写 .json 或 .png 文件路径
+    2. JSON 文本（兼容旧工作流）：直接粘贴角色卡 JSON
+    """
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "optional": {
+                "card_path": ("STRING", {
+                    "default": "",
+                    "placeholder": "角色卡文件路径（.json 或 .png）- 推荐",
+                }),
                 "card_json": ("STRING", {
                     "multiline": True,
                     "default": "",
-                    "placeholder": '粘贴 SillyTavern V3 角色卡 JSON...',
-                }),
-                "card_path": ("STRING", {
-                    "default": "",
-                    "placeholder": "或填写角色卡 .json / SillyTavern .png 文件路径",
+                    "placeholder": "或粘贴角色卡 JSON（兼容旧工作流）",
                 }),
             },
         }
@@ -34,20 +39,31 @@ class AWPCardImport:
     CATEGORY = "AWP RP/角色卡"
     OUTPUT_NODE = True
     
-    def execute(self, card_json: str = "", card_path: str = ""):
-        """Import a character card."""
-        if not card_json.strip() and not card_path.strip():
-            return ("", "", "Error: paste card_json or provide card_path")
+    def execute(self, card_path: str = "", card_json: str = ""):
+        """Import a character card from file or JSON text."""
+        card_data = None
         
-        try:
-            if card_path.strip():
+        # 优先使用文件路径
+        if card_path.strip():
+            try:
                 card_data = load_card_json_from_file(card_path)
-            else:
+            except FileNotFoundError as e:
+                return ("", "", f"Error: file not found - {e}")
+            except ValueError as e:
+                return ("", "", f"Error: invalid card format - {e}")
+            except Exception as e:
+                return ("", "", f"Error loading card file: {e}")
+        
+        # 如果没有文件路径，尝试解析 JSON 文本
+        if card_data is None and card_json.strip():
+            try:
                 card_data = json.loads(card_json)
-        except json.JSONDecodeError as e:
-            return ("", "", f"Error parsing JSON: {e}")
-        except Exception as e:
-            return ("", "", f"Error loading card file: {e}")
+            except json.JSONDecodeError as e:
+                return ("", "", f"Error parsing JSON: {e}")
+        
+        # 如果都没有提供
+        if card_data is None:
+            return ("", "", "Error: please provide card_path or card_json")
         
         importer = CardImporter()
         

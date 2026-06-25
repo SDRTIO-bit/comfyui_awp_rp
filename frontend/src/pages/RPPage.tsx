@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useCallback, useMemo } from 'react'
+import { useEffect, useReducer, useCallback, useMemo, useState } from 'react'
 import type {
   PageState,
   ResourceType,
@@ -16,6 +16,7 @@ import ResourcePanel from '../components/ResourcePanel'
 import NarrativeFlow from '../components/NarrativeFlow'
 import InputDock from '../components/InputDock'
 import RightPanel from '../components/RightPanel'
+import CardEditor from '../components/CardEditor'
 
 interface State {
   pageState: PageState
@@ -114,7 +115,7 @@ const initialState: State = {
   activeCardId: 'card_demo_001',
   activeSessionId: 'rp-session-001',
   activePresetId: 'long-narrative-v1',
-  activeWorkflow: 'rp_full_node_workflow.json',
+  activeWorkflow: 'rp_agent_web_v1.json',
   currentRound: 0,
   connOk: true,
   errorMessage: '',
@@ -144,16 +145,31 @@ function buildRoles(state: State, text: string) {
       context_mode: 'full_context',
       temperature: 0.85,
       max_tokens: 2048,
+      enable_agent_loop: true,
+      max_iterations: 5,
+      skill_ids: 'rp_thinking_flow,hard_gates_full',
     },
   }
 }
 
 function pickNarrative(result: RunResponse): string {
   const outputs = Object.entries(result.outputs ?? {})
-  const preferred =
-    outputs.find(([key]) => /final|reply|text|文本/i.test(key)) ??
-    outputs.find(([, value]) => typeof value === 'string' && value.trim().length > 0)
-  return preferred?.[1]?.trim() || `运行完成，prompt_id=${result.prompt_id ?? 'unknown'}，但没有文本输出。`
+  
+  // 优先查找 OutputRenderer 节点的输出（通常是 14 或 17 号节点）
+  const outputRenderer = outputs.find(([key]) => /^(14|17)\//.test(key))
+  if (outputRenderer && typeof outputRenderer[1] === 'string' && outputRenderer[1].trim()) {
+    return outputRenderer[1].trim()
+  }
+  
+  // 其次查找包含 'text' 的输出
+  const textOutput = outputs.find(([key]) => /text/i.test(key))
+  if (textOutput && typeof textOutput[1] === 'string' && textOutput[1].trim()) {
+    return textOutput[1].trim()
+  }
+  
+  // 最后查找任何非空字符串输出
+  const anyOutput = outputs.find(([, value]) => typeof value === 'string' && value.trim().length > 0)
+  return anyOutput?.[1]?.trim() || `运行完成，prompt_id=${result.prompt_id ?? 'unknown'}，但没有文本输出。`
 }
 
 function roleNode(analysis: WorkflowAnalysis | null, role: string) {
@@ -163,6 +179,7 @@ function roleNode(analysis: WorkflowAnalysis | null, role: string) {
 
 export default function RPPage() {
   const [s, dispatch] = useReducer(reducer, initialState)
+  const [editingCardId, setEditingCardId] = useState<string | null>(null)
 
   const activeCard = useMemo(
     () => s.cards.find(c => c.card_id === s.activeCardId),
@@ -179,6 +196,23 @@ export default function RPPage() {
       dispatch({ type: 'SET_DATA', key: 'worldbookEntries', data: wb })
     } catch (err) {
       dispatch({ type: 'LOG', message: `世界书加载失败：${err instanceof Error ? err.message : String(err)}` })
+    }
+  }, [])
+
+  const loadSessionHistory = useCallback(async (sessionId: string) => {
+    try {
+      const history = await fetchJson<{ turns: TurnData[]; turn_count: number }>(`/api/session/${encodeURIComponent(sessionId)}`)
+      if (history.turns && history.turns.length > 0) {
+        // 加载历史对话
+        for (const turn of history.turns) {
+          dispatch({ type: 'ADD_TURN', turn })
+        }
+        dispatch({ type: 'SET_CONTEXT', title: 'Story Workshop', line: `${sessionId} / 第 ${history.turn_count} 轮`, round: history.turn_count })
+        dispatch({ type: 'LOG', message: `已加载会话 ${sessionId} 的 ${history.turn_count} 轮历史对话` })
+      }
+    } catch (err) {
+      // 如果 API 不存在或出错，静默处理
+      console.log('Failed to load session history:', err)
     }
   }, [])
 
@@ -284,10 +318,50 @@ export default function RPPage() {
     void loadWorldbook(cardId)
   }, [loadWorldbook])
 
+  const importCard = useCallback(async () => {
+    // Create file input element
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,.png'
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      
+      dispatch({ type: 'LOG', message: `正在导入角色卡：${file.name}` })
+      
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        
+        const result = await fetchJson<{ ok: boolean; card_id?: string; name?: string; error?: string }>('/api/cards/import', {
+          method: 'POST',
+          body: formData,
+        })
+        
+        if (result.ok && result.card_id) {
+          dispatch({ type: 'LOG', message: `角色卡导入成功：${result.name}` })
+          // Refresh cards list
+          const cards = await fetchJson<CardMeta[]>('/api/cards')
+          dispatch({ type: 'SET_DATA', key: 'cards', data: cards })
+          // Select the imported card
+          dispatch({ type: 'SET_DATA', key: 'activeCardId', data: result.card_id })
+          void loadWorldbook(result.card_id)
+        } else {
+          dispatch({ type: 'LOG', message: `导入失败：${result.error}` })
+        }
+      } catch (err) {
+        dispatch({ type: 'LOG', message: `导入错误：${err instanceof Error ? err.message : String(err)}` })
+      }
+    }
+    input.click()
+  }, [loadWorldbook])
+
   const selectSession = useCallback((sessionId: string) => {
     dispatch({ type: 'SET_DATA', key: 'activeSessionId', data: sessionId })
     dispatch({ type: 'SET_STATE', state: 'active' })
-  }, [])
+    // 加载历史对话
+    void loadSessionHistory(sessionId)
+  }, [loadSessionHistory])
 
   const selectPreset = useCallback((presetId: string) => {
     dispatch({ type: 'SET_DATA', key: 'activePresetId', data: presetId })
@@ -317,6 +391,21 @@ export default function RPPage() {
     totalExpected: 5,
   }), [s.analysis])
 
+  const editingCard = useMemo(
+    () => s.cards.find(c => c.card_id === editingCardId),
+    [s.cards, editingCardId],
+  )
+
+  const openCardEditor = useCallback((cardId: string) => {
+    setEditingCardId(cardId)
+  }, [])
+
+  const closeCardEditor = useCallback(() => {
+    setEditingCardId(null)
+    // Refresh cards and worldbook after editing
+    void fetchData()
+  }, [fetchData])
+
   return (
     <div className="flex flex-col h-full">
       <TopBar
@@ -343,6 +432,8 @@ export default function RPPage() {
           onSelectSession={selectSession}
           onSelectPreset={selectPreset}
           onSelectWorkflow={selectWorkflow}
+          onImportCard={importCard}
+          onEditCard={openCardEditor}
           onClose={closeResource}
         />
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -414,6 +505,13 @@ export default function RPPage() {
           </button>
         )}
       </div>
+      {editingCardId && editingCard && (
+        <CardEditor
+          cardId={editingCardId}
+          cardName={editingCard.manifest.name}
+          onClose={closeCardEditor}
+        />
+      )}
     </div>
   )
 }

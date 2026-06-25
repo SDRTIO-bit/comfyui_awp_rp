@@ -51,6 +51,7 @@ export interface WorkflowRole {
   input_type: 'textarea' | 'select' | 'text'
   options_from?: string
   override_inputs?: string[]
+  supports_agent_loop?: boolean
 }
 
 export interface WorkflowAnalysis {
