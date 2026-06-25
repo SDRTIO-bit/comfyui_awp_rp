@@ -327,6 +327,24 @@ class SQLiteStore:
                 (key_str,)
             )
     
+    def list_sessions(self) -> list[dict]:
+        """List all agent sessions (summaries only)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT session_key, conversation_id, turns_json, summary, updated_at FROM agent_sessions ORDER BY updated_at DESC"
+            ).fetchall()
+            result = []
+            for row in rows:
+                turns = json.loads(row["turns_json"]) if row["turns_json"] else []
+                result.append({
+                    "session_key": row["session_key"],
+                    "conversation_id": row["conversation_id"],
+                    "turn_count": len(turns),
+                    "summary": row["summary"],
+                    "updated_at": row["updated_at"],
+                })
+            return result
+    
     # ============ Memory Record Methods ============
     
     def upsert_memory(self, namespace: str, records: list[MemoryRecord]) -> int:

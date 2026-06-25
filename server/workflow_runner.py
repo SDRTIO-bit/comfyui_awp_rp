@@ -39,8 +39,8 @@ def list_workflows() -> list[dict]:
                 "inputs": inputs,
                 "outputs": outputs,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[workflow_runner] Failed to load {f.name}: {e}", file=sys.stderr)
     return workflows
 
 
@@ -236,7 +236,7 @@ def inject_inputs(workflow: dict, input_values: dict[str, list]) -> dict:
                     # Preserve type if original was non-string
                     orig = widgets[idx] if idx < len(widgets) else ""
                     if isinstance(orig, bool):
-                        widgets[idx] = val.lower() in ("true", "1", "yes")
+                        widgets[idx] = str(val).lower() in ("true", "1", "yes")
                     elif isinstance(orig, (int, float)):
                         try:
                             widgets[idx] = type(orig)(val)
@@ -298,7 +298,350 @@ def _extract_outputs(history_entry: dict) -> dict[str, str]:
     return outputs
 
 
+# ═══ Local data endpoints (read from SQLite/JSON, no ComfyUI dependency) ═══
+
+def _ensure_import_path():
+    """Ensure the project root is on sys.path for imports."""
+    root = str(Path(__file__).parent.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+
+def list_cards() -> list[dict]:
+    """List imported character cards."""
+    _ensure_import_path()
+    from comfyui_awp_rp.card.import_card import CardImporter
+    importer = CardImporter()
+    return importer.list_cards()
+
+
+def get_card_worldbook(card_id: str) -> list[dict]:
+    """Get worldbook entries for a card."""
+    _ensure_import_path()
+    from comfyui_awp_rp.card.import_card import CardImporter
+    importer = CardImporter()
+    card = importer.get_card(card_id)
+    if not card:
+        return []
+    entries = card.get("worldbook", [])
+    result = []
+    for e in entries:
+        meta = e.get("metadata") or {}
+        activation = "off"
+        if meta.get("constant"):
+            activation = "const"
+        elif meta.get("selective") or (meta.get("enabled") and not meta.get("constant")):
+            activation = "select"
+        if not meta.get("enabled", True):
+            activation = "off"
+        result.append({
+            "id": e.get("id", ""),
+            "title": e.get("title"),
+            "content": e.get("content", ""),
+            "tags": e.get("tags", []),
+            "priority": e.get("priority", 0),
+            "activation": activation,
+            "enabled": meta.get("enabled", True),
+        })
+    return result
+
+
+def list_sessions() -> list[dict]:
+    """List all agent sessions."""
+    _ensure_import_path()
+    from comfyui_awp_rp.memory.short_term import AgentSessionManager
+    manager = AgentSessionManager()
+    sessions = manager._memory._store.list_sessions()  # type: ignore[attr-defined]
+    result = []
+    for s in sessions:
+        result.append({
+            "session_id": s.get("conversation_id", ""),
+            "turn_count": s.get("turn_count", 0),
+            "updated_at": s.get("updated_at", ""),
+        })
+    return result
+
+
+def list_presets() -> list[dict]:
+    """List available RP presets."""
+    _ensure_import_path()
+    from comfyui_awp_rp.preset.preset import PresetManager
+    manager = PresetManager()
+    return manager.list_presets()
+
+
+def list_providers() -> dict:
+    """List configured LLM providers."""
+    _ensure_import_path()
+    from comfyui_awp_rp.core.config import get_config
+    config = get_config()
+    result = {}
+    for pid, pc in config.providers.items():
+        result[pid] = {
+            "provider_id": pc.provider_id,
+            "base_url": pc.base_url,
+            "default_model": pc.default_model,
+            "has_key": bool(pc.api_key),
+        }
+    return result
+
+
+# ═══ Workflow analysis ═══
+
+ROLE_DOWNSTREAM = {
+    "AWPSessionLoad": "session_id",
+    "AWPCardSelect": "card_id",
+    "AWPInputParser": "user_input",
+    "AWPRetriever": "user_input",
+    "AWPRoundPreparer": "user_input",
+}
+
+DIRECT_ROLES = {
+    "AWPPreset": "preset",
+    "AWPDialogueDirector": "generator",
+    "AWPMainAgent": "generator",
+    "AWPJsonInput": "json_input",
+}
+
+
+def _get_downstream_types(node_id: int, links: list) -> set[str]:
+    """Get the set of node types that a node connects to downstream."""
+    downstream_ids = set()
+    for link in links:
+        if link[1] == node_id:
+            downstream_ids.add(link[3])
+    return downstream_ids
+
+
+def _get_node_by_id(nodes: list, nid: int) -> dict | None:
+    for n in nodes:
+        if n["id"] == nid:
+            return n
+    return None
+
+
+def analyze_workflow(filename: str) -> dict | None:
+    """Analyze a workflow and return role mappings."""
+    wf = load_workflow(filename)
+    if not wf:
+        return None
+
+    nodes = wf.get("nodes", [])
+    links = wf.get("links", [])
+
+    # Build node type lookup
+    node_types: dict[int, str] = {n["id"]: n.get("type", "") for n in nodes}
+
+    roles = []
+    unmatched = []
+
+    for node in nodes:
+        nid = node["id"]
+        ntype = node.get("type", "")
+
+        # Direct role match
+        if ntype in DIRECT_ROLES:
+            roles.append({
+                "role": DIRECT_ROLES[ntype],
+                "label": {"preset": "生成预设", "generator": "生成引擎", "json_input": "场景状态"}.get(DIRECT_ROLES[ntype], ntype),
+                "node_id": nid,
+                "node_type": ntype,
+                "confidence": "high",
+                "input_type": "textarea" if ntype == "AWPJsonInput" else "select" if ntype == "AWPPreset" else "text",
+            })
+            if ntype == "AWPDialogueDirector" or ntype == "AWPMainAgent":
+                roles[-1]["override_inputs"] = ["provider", "model", "temperature", "max_tokens", "context_mode"]
+            continue
+
+        # For text input nodes, disambiguate by downstream
+        if ntype in ("AWPTextInput",):
+            downstream_ids = _get_downstream_types(nid, links)
+            role = None
+            for d_id in downstream_ids:
+                d_type = node_types.get(d_id, "")
+                if d_type in ROLE_DOWNSTREAM:
+                    role = ROLE_DOWNSTREAM[d_type]
+                    break
+            if role:
+                roles.append({
+                    "role": role,
+                    "label": {"session_id": "会话ID", "card_id": "角色卡ID", "user_input": "用户输入"}.get(role, role),
+                    "node_id": nid,
+                    "node_type": ntype,
+                    "confidence": "high",
+                    "input_type": "textarea" if role == "user_input" else "text",
+                })
+                if role == "session_id":
+                    roles[-1]["options_from"] = "/api/sessions"
+                elif role == "card_id":
+                    roles[-1]["options_from"] = "/api/cards"
+            else:
+                unmatched.append({"node_id": nid, "type": ntype, "reason": "下游无匹配角色"})
+            continue
+
+        # Nodes with inputs but no role matched — skip silently (internal pipeline)
+
+    return {
+        "filename": filename,
+        "node_count": len(nodes),
+        "roles": roles,
+        "unmatched": unmatched,
+    }
+
+
+def _roles_to_injections(workflow: dict, roles: dict, analysis: dict) -> tuple[dict[str, list], dict[str, dict]]:
+    """Convert role-based values to node injections.
+    
+    Returns: (widget_injections, api_overrides)
+    widget_injections: {node_id: [value, ...]}  for leaf node widgets
+    api_overrides: {node_id: {input_name: value}} for non-leaf node input overrides
+    """
+    role_map = {r["role"]: r for r in analysis.get("roles", [])}
+    widgets: dict[str, list] = {}
+    overrides: dict[str, dict] = {}
+
+    for role_name, role_value in roles.items():
+        info = role_map.get(role_name)
+        if not info:
+            continue
+        nid = str(info["node_id"])
+
+        if role_name == "generator" and isinstance(role_value, dict):
+            overrides[nid] = role_value
+        elif role_name == "preset":
+            widgets.setdefault(nid, [None])
+            widgets[nid][0] = role_value
+        else:
+            widgets.setdefault(nid, [None])
+            widgets[nid][0] = str(role_value)
+
+    return widgets, overrides
+
+
+def convert_to_api_format_with_overrides(workflow: dict, overrides: dict[str, dict]) -> dict:
+    """Like convert_to_api_format but applies input overrides for non-leaf nodes."""
+    prompt = convert_to_api_format(workflow)
+    for nid, ov in overrides.items():
+        if nid in prompt.get("prompt", {}):
+            prompt["prompt"][nid]["inputs"].update(ov)
+    return prompt
+
+
+# ═══ Handler ═══
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(Path(__file__).parent / "static"), **kwargs)
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        # Static API routes
+        if path == "/api/workflows":
+            return self._json(list_workflows())
+        if path == "/api/health":
+            return self._json({"status": "ok", "comfyui": COMFYUI_URL})
+        if path == "/api/cards":
+            return self._json(list_cards())
+        if path == "/api/sessions":
+            return self._json(list_sessions())
+        if path == "/api/presets":
+            return self._json(list_presets())
+        if path == "/api/providers":
+            return self._json(list_providers())
+
+        # Parameterized routes
+        if path.startswith("/api/worldbook/"):
+            card_id = path.split("/api/worldbook/")[-1]
+            return self._json(get_card_worldbook(card_id))
+        if path.startswith("/api/workflows/") and path.endswith("/analyze"):
+            fname = path.split("/api/workflows/")[-1].replace("/analyze", "")
+            result = analyze_workflow(fname)
+            if result is None:
+                return self._json({"error": "Workflow not found"}, 404)
+            return self._json(result)
+
+        # Fallback: serve static files (SPA routing)
+        # Check if the request looks like an API call (starts with /api/) or a static file request
+        # For SPA routing, serve index.html for non-API, non-file requests
+        if not path.startswith("/api/") and "." not in path.split("/")[-1]:
+            # SPA route — serve index.html
+            self.path = "/index.html"
+        super().do_GET()
+
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            data = {}
+
+        if parsed.path == "/api/run":
+            self._handle_run(data)
+        elif parsed.path == "/api/run-roles":
+            self._handle_run_roles(data)
+        else:
+            self._json({"error": "not found"}, 404)
+
+    def _handle_run(self, data: dict):
+        filename = data.get("workflow", "")
+        input_values = data.get("inputs", {})
+
+        wf = load_workflow(filename)
+        if not wf:
+            self._json({"ok": False, "error": f"Workflow not found: {filename}"})
+            return
+
+        try:
+            wf = inject_inputs(wf, input_values)
+            prompt = convert_to_api_format(wf)
+            result = call_comfyui(prompt)
+            self._json(result)
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)})
+
+    def _handle_run_roles(self, data: dict):
+        """Handle run with role-based inputs."""
+        filename = data.get("workflow", "")
+        roles = data.get("roles", {})
+
+        wf = load_workflow(filename)
+        if not wf:
+            self._json({"ok": False, "error": f"Workflow not found: {filename}"})
+            return
+
+        analysis = analyze_workflow(filename)
+        if not analysis:
+            self._json({"ok": False, "error": "Workflow analysis failed"})
+            return
+
+        try:
+            widget_injections, api_overrides = _roles_to_injections(wf, roles, analysis)
+            wf = inject_inputs(wf, widget_injections)
+            prompt = convert_to_api_format_with_overrides(wf, api_overrides)
+            result = call_comfyui(prompt)
+            self._json(result)
+        except Exception as e:
+            self._json({"ok": False, "error": str(e)})
+
+    def _json(self, data, code: int = 200):
+        body = json.dumps(data, ensure_ascii=False, default=str).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(Path(__file__).parent / "static"), **kwargs)
 

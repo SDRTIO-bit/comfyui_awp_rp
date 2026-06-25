@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prototype A · 叙事阅读器/档案室</title>
+<style>
+  :root {
+    --bg: #1a1815;
+    --surface: #221f1b;
+    --text: #d4cfc7;
+    --text-dim: #8a857a;
+    --text-faint: #5c574f;
+    --accent: #c4a76c;
+    --accent-dim: #6b5a3e;
+    --divider: rgba(255,255,255,0.04);
+    --input-bg: #1f1c17;
+    --danger: #c06050;
+  }
+  * { margin:0; padding:0; box-sizing:border-box }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    min-height: 100vh;
+    line-height: 1.85;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ── Reading column ── */
+  .reader {
+    width: 100%;
+    max-width: 600px;
+    padding: 64px 24px 180px;
+  }
+
+  /* ── Story header ── */
+  .story-mast {
+    margin-bottom: 48px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .story-mast .title {
+    font-size: 21px;
+    font-weight: 500;
+    color: #e0d9ce;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .story-mast .meta {
+    font-size: 13px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 16px;
+  }
+  .story-mast .meta span {
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .story-mast .meta span:hover { color: var(--accent) }
+
+  /* ── Scene marker ── */
+  .scene-marker {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 40px 0 24px;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: system-ui, sans-serif;
+  }
+  .scene-marker::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.04);
+  }
+
+  /* ── Turn ── */
+  .turn {
+    position: relative;
+    margin-bottom: 40px;
+    padding-left: 0;
+  }
+  .turn .turn-gutter {
+    position: absolute;
+    left: -48px;
+    top: 2px;
+    width: 36px;
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-faint);
+    font-family: system-ui, sans-serif;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .turn:hover .turn-gutter { opacity: 1 }
+
+  /* ── Stage direction (action) ── */
+  .turn .action {
+    font-size: 14px;
+    color: var(--text-dim);
+    font-style: italic;
+    margin-bottom: 16px;
+    padding-left: 4px;
+    border-left: 1px solid rgba(255,255,255,0.06);
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  /* ── Narrative prose ── */
+  .turn .prose {
+    font-size: 16px;
+    color: #ccc7bd;
+    margin-bottom: 8px;
+  }
+  .turn .prose p { margin-bottom: 1em }
+  .turn .prose p:last-child { margin-bottom: 0 }
+
+  /* ── Dialogue inline ── */
+  .turn .prose .dialogue {
+    color: #e0d4b8;
+  }
+
+  /* ── Turn footer ── */
+  .turn .turn-foot {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .turn:hover .turn-foot { opacity: 1 }
+  .turn .turn-foot button {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
+    padding: 2px 0;
+    transition: color 0.2s;
+  }
+  .turn .turn-foot button:hover { color: var(--accent) }
+
+  /* ── Chapter break ── */
+  .chapter-break {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 56px 0 48px;
+    font-family: system-ui, sans-serif;
+    font-size: 11px;
+    color: var(--accent-dim);
+    letter-spacing: 0.12em;
+  }
+  .chapter-break::before, .chapter-break::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(196,167,108,0.08);
+  }
+
+  /* ── Input dock ── */
+  .input-dock {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 600px;
+    padding: 20px 24px 32px;
+    background: linear-gradient(180deg, transparent 0%, var(--bg) 40%);
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .input-row textarea {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 10px 14px;
+    resize: none;
+    min-height: 46px;
+    max-height: 140px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-row textarea:focus { border-color: rgba(196,167,108,0.3) }
+  .input-row textarea::placeholder { color: var(--text-faint) }
+  .input-row .btn-send {
+    background: var(--accent-dim);
+    color: #1a1815;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    transition: background 0.2s;
+    white-space: nowrap;
+    height: 46px;
+  }
+  .input-row .btn-send:hover { background: var(--accent) }
+
+  /* ── Continue button ── */
+  .continue-bar {
+    display: flex;
+    justify-content: center;
+    margin: 32px 0;
+  }
+  .btn-continue {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.06);
+    color: var(--text-dim);
+    font-size: 13px;
+    padding: 8px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: system-ui, sans-serif;
+    transition: all 0.2s;
+  }
+  .btn-continue:hover {
+    border-color: rgba(196,167,108,0.2);
+    color: var(--accent);
+  }
+
+  /* ── Top bar (minimal) ── */
+  .top-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: rgba(26,24,21,0.6);
+    backdrop-filter: blur(12px);
+    z-index: 10;
+    font-family: system-ui, sans-serif;
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .top-bar .story-name { cursor: pointer }
+  .top-bar .story-name:hover { color: var(--accent) }
+  .top-bar .right-group { display: flex; gap: 16px; align-items: center }
+  .top-bar .right-group button {
+    background: none; border: none; color: var(--text-faint);
+    font-size: 12px; cursor: pointer; font-family: inherit;
+    transition: color 0.2s;
+  }
+  .top-bar .right-group button:hover { color: var(--text-dim) }
+
+  /* ── Narrow screen ── */
+  @media (max-width: 640px) {
+    .reader { padding: 48px 16px 180px }
+    .turn .turn-gutter { left: -28px; width: 24px; font-size: 10px }
+    .top-bar { padding: 0 12px }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <span class="story-name">桃花村祠堂</span>
+  <span class="right-group">
+    <button>角色</button>
+    <button>素材</button>
+    <button>· · ·</button>
+  </span>
+</div>
+
+<main class="reader">
+
+  <!-- Story header -->
+  <div class="story-mast">
+    <div class="title">桃花村祠堂</div>
+    <div class="meta">
+      <span>李清 · 守祠人</span>
+      <span>34 轮</span>
+      <span>午后 · 阴天</span>
+    </div>
+  </div>
+
+  <!-- Turn 24 -->
+  <div class="turn">
+    <div class="turn-gutter">24</div>
+    <div class="prose">
+      <p>你推开祠堂老旧的木门，门轴发出刺耳的吱呀声。祠堂里弥漫着檀香的气息，光线透过窗棂洒在牌位上。一位年轻妇人正跪在蒲团上上香，听到声响后缓缓转过头来。</p>
+      <p>她的眼神安静，没有被打扰的不悦，也没有多余的好奇。她只是看了你一眼，然后重新转回去，将手里最后一炷香插进香炉。</p>
+      <p><span class="dialogue">"你是外乡人吧。"</span>她说，声音不高，祠堂的穹顶把这句话轻轻弹回来。</p>
+      <p><span class="dialogue">"桃花村很久没有外乡人来了。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 25 -->
+  <div class="turn">
+    <div class="turn-gutter">25</div>
+    <div class="action">你走到她身侧，弯腰捡起地上一片被风吹落的黄纸。</div>
+    <div class="prose">
+      <p>她没有阻止你。黄纸上写着一个名字，墨迹已经褪了大半，只勉强能认出"清"字。她把纸从你手里抽走，动作很轻，像从孩子手里拿走一件不该碰的东西。</p>
+      <p><span class="dialogue">"我丈夫的。"</span>她把黄纸叠好，放进袖口。<span class="dialogue">"走三年了。"</span></p>
+      <p>祠堂深处有钟声传来，闷闷的，不像是被人敲的——更像是风从某个方向恰好吹动了钟舌。她听见了，但没有抬头。似乎这种事每天都在发生。</p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 26 -->
+  <div class="turn">
+    <div class="turn-gutter">26</div>
+    <div class="action">你在牌位前站了一会儿，注意到最高处有一块牌位被红布遮着。</div>
+    <div class="prose">
+      <p>她随着你的目光看过去，沉默了片刻。<span class="dialogue">"那是祠堂的老人。按规矩，无后的牌位要遮红布，免得冲撞了香火。"</span></p>
+      <p>她站起来，掸了掸膝上的灰。这个动作让袖口滑下去一截，露出手腕上一道很旧的疤。她不自然地拉了拉袖子，而你假装没有看到。</p>
+      <p><span class="dialogue">"你是来找人的？"</span>她问。</p>
+      <p>问完之后她又摇了摇头，像是觉得这个问题多余。<span class="dialogue">"算了，来桃花村的外乡人，十个里有九个是来找人的。还有一个是迷路的。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Chapter break -->
+  <div class="chapter-break">祠堂旧事</div>
+
+  <!-- Turn 27 -->
+  <div class="turn">
+    <div class="turn-gutter">27</div>
+    <div class="action">你说你是来找一个人的——一个二十年前离开桃花村的人。</div>
+    <div class="prose">
+      <p>她的动作停了一瞬。不是震惊，更像是某个早已预见到的事情终于发生了的那种停顿。</p>
+      <p><span class="dialogue">"二十年前。"</span>她重复了一遍，像是在咀嚼这三个字的重量。<span class="dialogue">"二十年前我还不是守祠人。那时候祠堂的香火是小周管的。"</span></p>
+      <p>她走到窗边，推开一扇半掩的窗。外面的天是铅灰色的，祠堂前的老槐树叶子一动不动。空气里有种山雨欲来的沉闷。</p>
+      <p><span class="dialogue">"小周五年前也走了。病走的。所以你问的事——"</span></p>
+      <p>她转过身来，逆着光，看不清表情。<span class="dialogue">"你可能找错人了。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 28 -->
+  <div class="turn">
+    <div class="turn-gutter">28</div>
+    <div class="action">你从怀里掏出一枚铜钱，放在供桌上。"这个人，当年走的时候在祠堂门槛下压了一枚铜钱。"</div>
+    <div class="prose">
+      <p>她没有立刻去拿那枚铜钱。只是看着它，看了很久。香炉里的烟在铜钱上方拐了一个弯，像是被什么看不见的东西挡了一下。</p>
+      <p><span class="dialogue">"我见过这种铜钱。"</span>她终于开口，声音比之前低了很多。<span class="dialogue">"在祠堂的地砖下面。不是这一枚——是另一枚。一样的制式，一样的大小。"</span></p>
+      <p>她走到祠堂正中的一块地砖前，用脚尖点了点。<span class="dialogue">"就在这下面。我是三年前打扫的时候发现的。"</span></p>
+      <p>然后她抬起头，第一次真正直视你的眼睛。<span class="dialogue">"你找的那个人——是不是姓沈？"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 29 -->
+  <div class="turn">
+    <div class="turn-gutter">29</div>
+    <div class="action">你说是。沈青山。</div>
+    <div class="prose">
+      <p>窗外的老槐树忽然沙沙响了起来。没有风。她看了一眼窗外，又看了一眼你，然后走到祠堂门口，把门关上了。</p>
+      <p>祠堂里暗下来。只有香火的红点和窗棂缝隙漏进来的几道光柱。灰尘在光柱里缓慢翻滚。</p>
+      <p><span class="dialogue">"沈青山是我爹。"</span></p>
+      <p>这句话落下去之后，祠堂里安静了很久。久到你听到自己的心跳被穹顶弹回来。</p>
+      <p>她重新走回牌位前，在蒲团上跪下。这次不是上香——她只是跪着，背对着你，声音平稳得像在读一段诵了千百遍的经文：</p>
+      <p><span class="dialogue">"他没有死在外面。他回来过。三年前回来过一次，在祠堂里坐了一夜。天没亮就走了。走之前，在地砖下面留了一封信。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 30 -->
+  <div class="turn">
+    <div class="turn-gutter">30</div>
+    <div class="action">"信里写了什么？"你问。</div>
+    <div class="prose">
+      <p><span class="dialogue">"信不是写给我的。"</span>她站起来，走到供桌前，把手按在那枚铜钱上。<span class="dialogue">"是写给将来会来找他的人。他只说——如果有一天，有人带着一枚铜钱来祠堂找他，就把信交给那个人。"</span></p>
+      <p>她把铜钱推回你面前。<span class="dialogue">"你先拿着。信不在我身上。"</span></p>
+      <p>她的手指在铜钱上停了一秒。那一秒里，你看到她指尖微微发抖。</p>
+      <p><span class="dialogue">"信在我住的地方。离祠堂三里路。你要是不急的话——"</span>她顿了顿，似乎在做一个决定。<span class="dialogue">"明天来。明天我把信带过来。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Chapter break -->
+  <div class="chapter-break">山雨</div>
+
+  <!-- Turn 31 -->
+  <div class="turn">
+    <div class="turn-gutter">31</div>
+    <div class="action">你答应明天再来。走出祠堂时，天已经快黑了。远处的山脊线上有闪电划过。</div>
+    <div class="prose">
+      <p>她在你身后说了一句话。声音被忽然刮起来的风撕碎了一半，你只听见最后几个字：<span class="dialogue">"……别走山路。"</span></p>
+      <p>你回头的时候，她已经消失在祠堂的阴影里。门没有关。祠堂深处有一点香火还在亮着，像一只不肯合上的眼睛。</p>
+      <p>铜钱在掌心微微发烫。不知道是不是错觉。</p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 32 -->
+  <div class="turn">
+    <div class="turn-gutter">32</div>
+    <div class="action">你在村口的老槐树下站了一会儿。天已经完全黑了。远处有人提着灯笼在田埂上走，灯光一摇一晃的。</div>
+    <div class="prose">
+      <p>雨终于落下来了。不大，但很密，打在槐树叶子上像无数人在远处低语。你把铜钱放回怀里，正准备找地方过夜，那盏灯笼忽然朝你的方向拐了过来。</p>
+      <p>提灯的是个老道士。他走到你面前，也不说话，就把灯笼举到你脸前照了照。灯光晃得你眯起眼。</p>
+      <p><span class="dialogue">"外乡人。"</span>老道士放下灯笼。他的声音沙哑，像砂纸磨过木头。<span class="dialogue">"今天去过祠堂了？"</span></p>
+      <p>你没回答。老道士也不在意。他转过身，朝村子深处走去，走了几步又停下来，头也不回地说：</p>
+      <p><span class="dialogue">"沈青山欠我的东西，该还了。"</span></p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 33 -->
+  <div class="turn">
+    <div class="turn-gutter">33</div>
+    <div class="action">你追上老道士。"他欠你什么？"</div>
+    <div class="prose">
+      <p>老道士停下来。雨水从他斗笠的边缘滴下来，在灯笼光里像一串断线的珠子。他没有立刻回答。他把灯笼插在路边的泥里，从怀里摸出一个油纸包，一层一层打开。</p>
+      <p>里面是一枚铜钱。和你怀里的那枚一模一样。</p>
+      <p><span class="dialogue">"二十年前，沈青山在祠堂门槛下压了三枚铜钱。一枚给你，一枚给他女儿，一枚——"</span>老道士把铜钱翻过来，背面刻着一个"债"字。<span class="dialogue">"一枚给我。"</span></p>
+      <p>他把铜钱包好，重新揣进怀里。<span class="dialogue">"我不是来要债的。我是来告诉你，三枚铜钱凑齐之前，谁都别想离开桃花村。"</span></p>
+      <p>说完他提起灯笼，头也不回地走进雨里。田埂上的泥被踩出一串深深的脚印，很快又被雨水填平。</p>
+    </div>
+    <div class="turn-foot">
+      <button>复制</button>
+      <button>重试</button>
+      <button>详情</button>
+    </div>
+  </div>
+
+  <!-- Turn 34 (current) -->
+  <div class="turn" style="margin-bottom:20px">
+    <div class="turn-gutter" style="opacity:1; color:var(--accent-dim)">34</div>
+    <div class="action">你决定先找个地方住下来。明天去祠堂，拿信，见李清。</div>
+    <div class="prose">
+      <p>村里唯一能住人的地方是祠堂后面的老屋。李清走之前给你指过路——她说门没锁，灶台上有干柴，床板硬但还能睡人。</p>
+      <p>你推开门的时候，屋子里有一股陈年的木头味。窗台上放着一盏没点过的油灯，旁边是一个粗陶碗，碗底有一点干涸的茶渍。像是有人不久前在这里坐过。</p>
+      <p>你把铜钱从怀里掏出来放在油灯旁边。窗外的雨还在下。远处祠堂的方向有一星灯火，不知道是李清还没走，还是长明灯的影子。</p>
+      <p>明天。明天你会知道那封信里写了什么。</p>
+    </div>
+    <div class="turn-foot" style="opacity:1">
+      <button>复制</button>
+      <button>重试</button>
+      <button style="color:var(--accent-dim)">本轮详情 →</button>
+    </div>
+  </div>
+
+  <!-- Continue -->
+  <div class="continue-bar">
+    <button class="btn-continue">让故事继续……</button>
+  </div>
+
+</main>
+
+<!-- Input -->
+<div class="input-dock">
+  <div class="input-row">
+    <textarea placeholder="写下你的下一步行动……" rows="1"></textarea>
+    <button class="btn-send">发送</button>
+  </div>
+</div>
+
+</body>
+</html>
