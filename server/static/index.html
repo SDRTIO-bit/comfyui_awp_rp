@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWP RP Workflow Runner</title>
+<style>
+:root { --bg: #0f0f1a; --card: #1a1a2e; --accent: #6c63ff; --text: #e0e0e0; --input-bg: #12122a; --border: #2a2a4a; --green: #4ade80; --red: #f87171; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; padding: 24px; }
+.container { max-width: 900px; margin: 0 auto; }
+h1 { font-size: 22px; margin-bottom: 4px; }
+.subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+.field input, .field textarea, .field select { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 14px; font-family: inherit; }
+.field textarea { resize: vertical; min-height: 80px; }
+.field .hint { font-size: 11px; color: #666; margin-top: 2px; }
+button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 12px 28px; cursor: pointer; font-size: 14px; font-weight: 600; }
+button:hover { opacity: 0.9; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+.actions { display: flex; gap: 10px; align-items: center; }
+.output { background: #0a0a18; border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; max-height: 500px; overflow-y: auto; margin-top: 10px; }
+.status { font-size: 12px; padding: 6px 10px; border-radius: 4px; display: inline-block; }
+.status.ok { background: #064e3b; color: var(--green); }
+.status.err { background: #4a1a1a; color: var(--red); }
+.status.loading { background: #1a1a3e; color: #8888cc; }
+select { background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 14px; width: 100%; }
+.meta { font-size: 12px; color: #666; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>AWP RP Workflow Runner</h1>
+<p class="subtitle">自动发现工作流输入节点 · 填写即运行</p>
+
+<div class="card">
+  <h2>选择工作流</h2>
+  <select id="wfSelect" onchange="loadWorkflow()">
+    <option value="">— 选择工作流 —</option>
+  </select>
+  <div class="meta" id="wfMeta"></div>
+</div>
+
+<div class="card" id="inputCard" style="display:none">
+  <h2>输入参数</h2>
+  <div id="inputFields"></div>
+  <div class="actions">
+    <button id="runBtn" onclick="run()">Run</button>
+    <span class="status" id="runStatus" style="display:none"></span>
+  </div>
+</div>
+
+<div class="card" id="outputCard" style="display:none">
+  <h2>输出结果</h2>
+  <div class="output" id="outputContent"></div>
+</div>
+</div>
+
+<script>
+let currentWorkflow = null;
+
+async function init() {
+  try {
+    const res = await fetch('/api/workflows');
+    const wfs = await res.json();
+    const sel = document.getElementById('wfSelect');
+    wfs.forEach(wf => {
+      const opt = document.createElement('option');
+      opt.value = wf.filename;
+      opt.textContent = `${wf.filename} (${wf.node_count} 节点, ${wf.inputs.length} 输入, ${wf.outputs.length} 输出)`;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    document.getElementById('wfSelect').innerHTML = '<option value="">加载失败 — ComfyUI 是否已启动？</option>';
+  }
+}
+
+async function loadWorkflow() {
+  const filename = document.getElementById('wfSelect').value;
+  if (!filename) {
+    document.getElementById('inputCard').style.display = 'none';
+    document.getElementById('outputCard').style.display = 'none';
+    return;
+  }
+
+  const res = await fetch('/api/workflows');
+  const wfs = await res.json();
+  currentWorkflow = wfs.find(w => w.filename === filename);
+  if (!currentWorkflow) return;
+
+  document.getElementById('wfMeta').textContent =
+    `节点: ${currentWorkflow.node_count} | 连线: ${currentWorkflow.link_count} | 输入字段: ${currentWorkflow.inputs.reduce((s, n) => s + n.fields.length, 0)} | 输出节点: ${currentWorkflow.outputs.length}`;
+
+  // Build input fields
+  const container = document.getElementById('inputFields');
+  container.innerHTML = '';
+  currentWorkflow.inputs.forEach(inputNode => {
+    inputNode.fields.forEach(field => {
+      const div = document.createElement('div');
+      div.className = 'field';
+      div.innerHTML = `
+        <label>${field.label} <span class="hint">(${inputNode.type} #${inputNode.node_id})</span></label>
+        ${field.type === 'text' && field.default && field.default.length > 60
+          ? `<textarea data-node="${inputNode.node_id}" data-idx="${field.index}">${escapeHtml(field.default)}</textarea>`
+          : `<input data-node="${inputNode.node_id}" data-idx="${field.index}" value="${escapeHtml(field.default)}">`
+        }
+      `;
+      container.appendChild(div);
+    });
+  });
+
+  document.getElementById('inputCard').style.display = 'block';
+  document.getElementById('outputCard').style.display = 'none';
+}
+
+async function run() {
+  if (!currentWorkflow) return;
+
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('runStatus');
+  btn.disabled = true;
+  status.style.display = 'inline-block';
+  status.className = 'status loading';
+  status.textContent = 'Running...';
+
+  // Collect inputs
+  const inputs = {};
+  document.querySelectorAll('#inputFields [data-node]').forEach(el => {
+    const nodeId = el.dataset.node;
+    const idx = parseInt(el.dataset.idx);
+    if (!inputs[nodeId]) inputs[nodeId] = [];
+    inputs[nodeId][idx] = el.value;
+  });
+
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow: currentWorkflow.filename, inputs })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      status.className = 'status ok';
+      status.textContent = `Done (prompt: ${data.prompt_id})`;
+      document.getElementById('outputCard').style.display = 'block';
+      const outDiv = document.getElementById('outputContent');
+      if (data.outputs && Object.keys(data.outputs).length > 0) {
+        outDiv.textContent = Object.entries(data.outputs)
+          .map(([k, v]) => `--- ${k} ---\n${v}`).join('\n\n');
+      } else {
+        outDiv.textContent = '(No text output captured — check ComfyUI interface)';
+      }
+    } else {
+      status.className = 'status err';
+      status.textContent = 'Error: ' + (data.error || 'unknown');
+    }
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = 'Error: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>
