@@ -155,19 +155,40 @@ function buildRoles(state: State, text: string) {
 function pickNarrative(result: RunResponse): string {
   const outputs = Object.entries(result.outputs ?? {})
   
-  // 优先查找 OutputRenderer 节点的输出（通常是 14 或 17 号节点）
-  const outputRenderer = outputs.find(([key]) => /^(14|17)\//.test(key))
+  // 1. 最优先：查找 final_rp_reply 标签的输出（Node 23: AWPTextOutput）
+  const finalReply = outputs.find(([key]) => /\/label$/.test(key) && key.includes('final_rp_reply'))
+  if (finalReply) {
+    const textKey = finalReply[0].replace('/label', '/text')
+    const textVal = outputs.find(([k]) => k === textKey)?.[1]
+    if (typeof textVal === 'string' && textVal.trim()) return textVal.trim()
+  }
+  // 直接查找 Node 23 的输出
+  const node23 = outputs.find(([key]) => /^23\//.test(key) && /text/i.test(key))
+  if (node23 && typeof node23[1] === 'string' && node23[1].trim()) {
+    return node23[1].trim()
+  }
+  
+  // 2. 其次：查找带有 final_rp_reply 标签的节点
+  const finalReplyLabel = outputs.find(([, value]) => typeof value === 'string' && value === 'final_rp_reply')
+  if (finalReplyLabel) {
+    const textKey = finalReplyLabel[0].replace('/label', '/text')
+    const textVal = outputs.find(([k]) => k === textKey)?.[1]
+    if (typeof textVal === 'string' && textVal.trim()) return textVal.trim()
+  }
+  
+  // 3. 查找 OutputRenderer 节点（Node 20）的输出
+  const outputRenderer = outputs.find(([key]) => /^20\//.test(key) && /text/i.test(key))
   if (outputRenderer && typeof outputRenderer[1] === 'string' && outputRenderer[1].trim()) {
     return outputRenderer[1].trim()
   }
   
-  // 其次查找包含 'text' 的输出
-  const textOutput = outputs.find(([key]) => /text/i.test(key))
+  // 4. 其次查找包含 'text' 的输出（排除中间节点）
+  const textOutput = outputs.find(([key]) => /\/text$/.test(key) && !/^(3|4|8|12|13|15|17|18|19|31|32)\//.test(key))
   if (textOutput && typeof textOutput[1] === 'string' && textOutput[1].trim()) {
     return textOutput[1].trim()
   }
   
-  // 最后查找任何非空字符串输出
+  // 5. 最后查找任何非空字符串输出
   const anyOutput = outputs.find(([, value]) => typeof value === 'string' && value.trim().length > 0)
   return anyOutput?.[1]?.trim() || `运行完成，prompt_id=${result.prompt_id ?? 'unknown'}，但没有文本输出。`
 }

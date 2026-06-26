@@ -654,15 +654,38 @@ class AWPRoundPreparer:
             input_matched.sort(key=lambda x: x["score"], reverse=True)
             input_matched = input_matched[:top_worldbook]
 
-        all_matches = injection_matched + matched_wb + input_matched
+        # ── Step 2.5: Load constant (always-on) worldbook entries ──
+        constant_matched: list[dict] = []
+        if wb_index:
+            for entry in wb_index:
+                activation = entry.get("activation", "")
+                if activation == "const":
+                    kw = entry.get("keyword", "")
+                    if kw not in {m["keyword"] for m in matched_wb + input_matched + injection_matched + constant_matched}:
+                        constant_matched.append({
+                            "keyword": kw,
+                            "title": entry.get("title", kw),
+                            "section": entry.get("section", f"## {kw}"),
+                            "one_liner": entry.get("one_liner", ""),
+                            "content": entry.get("content", ""),
+                            "score": 200.0,  # 常开条目给予最高优先级
+                            "reason": "constant (always-on)",
+                            "source": "constant",
+                        })
+
+        all_matches = injection_matched + matched_wb + input_matched + constant_matched
         # Deduplicate by keyword, keep highest score
         seen_kw: set[str] = set()
         deduped: list[dict] = []
-        for m in sorted(all_matches, key=lambda x: x.get("score", 0), reverse=True):
+        # 常开条目优先保留
+        for m in sorted(all_matches, key=lambda x: (x.get("source") == "constant", x.get("score", 0)), reverse=True):
             if m["keyword"] not in seen_kw:
                 seen_kw.add(m["keyword"])
                 deduped.append(m)
-        all_matches = deduped[:top_worldbook * 2]
+        # 常开条目不受 top_worldbook 限制
+        constant_entries = [m for m in deduped if m.get("source") == "constant"]
+        other_entries = [m for m in deduped if m.get("source") != "constant"]
+        all_matches = constant_entries + other_entries[:top_worldbook]
 
         # ── Step 3: Variable checklist ──
         var_checklist = generate_variable_checklist(variables, v_diff)
@@ -692,11 +715,17 @@ class AWPRoundPreparer:
             source_tag = {
                 "input_match": "input-match",
                 "injection_rule": "injection-rule",
+                "constant": "constant",
             }.get(match.get("source"), "var-driven")
+            # 常开条目使用完整内容，其他使用 one_liner
+            if match.get("source") == "constant" and match.get("content"):
+                content = match["content"]
+            else:
+                content = match.get("one_liner", "")
             sections.append(
                 f"## Worldbook: {match['keyword']} [{source_tag} score={match.get('score', 0)}]\n"
                 f"Title: {match.get('title', '')}\n"
-                f"{match.get('one_liner', '')}"
+                f"{content}"
             )
 
         if memories:
