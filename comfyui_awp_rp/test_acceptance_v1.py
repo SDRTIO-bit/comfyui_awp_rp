@@ -182,12 +182,13 @@ class WorldbookDoubleProcessingTests(unittest.TestCase):
              "one_liner": "", "content": "设定" * 80, "activation": "const"}
             for i in range(20)
         ]
-        assembled, matched, checklist, budget = AWPRoundPreparer().execute(
+        _rp = AWPRoundPreparer().execute(
             user_input="你好",
             session_id="acc-prep",
             worldbook_index=json.dumps(wb_index),
             routing_decision_json=decision,
         )
+        assembled, matched, checklist, budget = _rp[0], _rp[1], _rp[2], _rp[3]
         budget = json.loads(budget)
         self.assertEqual(budget["context_owner"], "routed")
         self.assertIn("core_worldbook_token_estimate", budget)

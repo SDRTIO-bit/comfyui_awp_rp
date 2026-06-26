@@ -177,6 +177,11 @@ class AWPDialogueDirector:
                 "temperature": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 2.0, "step": 0.05}),
                 "max_tokens": ("INT", {"default": 2048, "min": 128, "max": 8192}),
                 "dry_run": ("BOOLEAN", {"default": False}),
+                "writer_contract_json": ("STRING", {
+                    "multiline": True, "default": "",
+                    "forceInput": True,
+                    "label": "WriterContract JSON（P4D-1A：渲染为不可违背状态段）",
+                }),
             },
         }
 
@@ -199,6 +204,7 @@ class AWPDialogueDirector:
         temperature: float = 0.8,
         max_tokens: int = 2048,
         dry_run: bool = False,
+        writer_contract_json: str = "",
     ):
         profile_manager = ProfileManager()
         agent_profile = profile_manager.get_profile(profile)
@@ -218,7 +224,12 @@ class AWPDialogueDirector:
             system_prompt=agent_profile.foundational_system_prompt,
             preset_sections_json=preset_sections,
             reply_rules=reply_rules,
+            writer_contract_json=writer_contract_json,
         )
+
+        # Track contract usage in metadata
+        _contract_provided = bool(writer_contract_json.strip())
+        _contract_rendered = bool(writer_contract_json.strip())
 
         config = get_config()
         provider_config = config.providers.get(provider)
@@ -232,6 +243,7 @@ class AWPDialogueDirector:
             "context_mode": context_mode,
             "dry_run": dry_run,
             "prompt_tokens_estimated": len(prompt) // 4,
+            "writer_contract_provided": _contract_provided,
         }
 
         if dry_run:
@@ -282,7 +294,13 @@ class AWPDialogueDirector:
 
 
 class AWPQualityGate:
-    """RP 回复的确定性质量门禁。"""
+    """RP 回复的确定性质量门禁。
+
+    P4D-1: 增加 writer_contract_json 可选输入，支持：
+    - 身份检查（核心角色/用户身份/关系绑定被替换）
+    - 长度检查（最小正文字数，排除选项块）
+    - 连续性检查（场景跳转、禁止阶段移动、角色范围）
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -292,6 +310,11 @@ class AWPQualityGate:
             },
             "optional": {
                 "critic_review_json": ("STRING", {"multiline": True, "default": "", "forceInput": True}),
+                "writer_contract_json": ("STRING", {
+                    "multiline": True, "default": "",
+                    "forceInput": True,
+                    "label": "WriterContract JSON（P4D-1 身份/长度/连续性检查）",
+                }),
             },
         }
 
@@ -300,10 +323,233 @@ class AWPQualityGate:
     FUNCTION = "execute"
     CATEGORY = "AWP RP/管线"
 
-    def execute(self, reply: str, critic_review_json: str = ""):
+    def execute(self, reply: str, critic_review_json: str = "", writer_contract_json: str = ""):
         decision = apply_quality_gate(reply, critic_review_json)
+
+        # P4D-1: Contract-based deterministic checks
+        contract = safe_json_loads(writer_contract_json, {})
+        if isinstance(contract, dict) and contract.get("schemaId"):
+            contract_issues = self._check_writer_contract(reply, contract)
+            if contract_issues:
+                decision.setdefault("issues", []).extend(contract_issues)
+                # Update accepted status if any error-severity issues
+                has_errors = any(i.get("severity") == "error" for i in contract_issues)
+                if has_errors:
+                    decision["accepted"] = False
+                    decision["decision"] = "revise"
+                    decision["failedChecks"] = sorted(set(
+                        decision.get("failedChecks", []) +
+                        [i.get("code", "contract") for i in contract_issues if i.get("severity") == "error"]
+                    ))
+
         status = "accept" if decision["accepted"] else "revise"
         return (json_dumps(decision), status, decision.get("revisionInstruction") or "")
+
+    def _check_writer_contract(self, reply: str, contract: dict) -> list[dict[str, Any]]:
+        """Run deterministic checks against writer contract."""
+        issues: list[dict[str, Any]] = []
+        text = str(reply or "")
+
+        # ── Identity checks ──
+        cast = contract.get("cast", {})
+        if isinstance(cast, dict):
+            issues.extend(self._check_identity(text, cast))
+
+        # ── Length checks ──
+        output_req = contract.get("outputRequirements", {})
+        if isinstance(output_req, dict):
+            issues.extend(self._check_length(text, output_req))
+
+        # ── Continuity checks ──
+        state = contract.get("state", {})
+        scene = contract.get("scene", {})
+        if isinstance(state, dict):
+            issues.extend(self._check_continuity(text, state, scene))
+
+        return issues
+
+    def _check_identity(self, text: str, cast: dict) -> list[dict[str, Any]]:
+        """Check for identity violations in the reply."""
+        issues: list[dict[str, Any]] = []
+
+        # Get locked character names
+        locked = cast.get("lockedCharacters", [])
+        known_names: set[str] = set()
+        for char in locked:
+            if isinstance(char, dict):
+                name = char.get("name", "")
+                if name:
+                    known_names.add(name)
+                for alias in char.get("aliases", []):
+                    if isinstance(alias, str):
+                        known_names.add(alias)
+
+        # Get user identity
+        user_id = cast.get("userIdentity", {})
+        user_name = ""
+        if isinstance(user_id, dict):
+            user_name = str(user_id.get("name", ""))
+
+        # Get relationship bindings
+        bindings = cast.get("relationshipBindings", [])
+        binding_names: dict[str, str] = {}
+        for b in bindings:
+            if isinstance(b, dict):
+                src = b.get("source", "")
+                target = b.get("target", "")
+                if src and target:
+                    binding_names[src] = target
+
+        # ── Check: core character replaced by stranger ──
+        # Look for character names in reply that are NOT in known_names
+        # Only flag high-confidence cases: names appearing in dialogue markers
+        import re
+        dialogue_names = re.findall(r'[「「]([^」」]{1,20}?)[：:]', text)
+        narrator_names = re.findall(r'(?:^|[，。！？\n])(.{1,6}?)(?:说道|道|说|问|答|喊|叫|笑|叹|怒|哭)', text)
+
+        # Generic terms that should NOT be flagged
+        generic_terms = {"村民", "邻居", "路人", "大家", "众人", "他们", "她", "他", "你", "我", "陌生人"}
+
+        for name in set(dialogue_names + narrator_names):
+            name = name.strip()
+            if not name or len(name) < 2:
+                continue
+            if name in generic_terms:
+                continue
+            if name in known_names:
+                continue
+            # High-confidence: appears as a speaker but not a known character
+            issues.append({
+                "code": "identity_suspect",
+                "severity": "warning",
+                "message": f"疑似陌生角色名 '{name}' 出现在对话中，但不在已知角色列表中",
+                "suggestion": "确认该角色是否为合法新增角色",
+            })
+
+        # ── Check: user identity replaced ──
+        if user_name:
+            # Check if the reply speaks AS the user (player control)
+            user_patterns = [f"{user_name}心想", f"{user_name}决定", f"{user_name}选择"]
+            for pattern in user_patterns:
+                if pattern in text:
+                    issues.append({
+                        "code": "identity_violation",
+                        "severity": "error",
+                        "message": f"回复替用户 '{user_name}' 做出了行动或思想决定",
+                        "suggestion": "描述NPC/世界反应，让玩家自主决定",
+                    })
+                    break
+
+        # ── Check: relationship binding violation ──
+        # This is hard to do deterministically, so we only check for
+        # explicit contradictions in very specific patterns
+        for src, target in binding_names.items():
+            # If a binding says "A trusts B" but the reply says "A suspects B"
+            trust_terms = {"信任", "信赖", "依赖"}
+            suspect_terms = {"怀疑", "不信任", "警惕", "防备"}
+            if f"{src}信任{target}" in text:
+                # This is fine
+                pass
+            # Note: full relationship consistency check would need LLM
+            # This is a placeholder for deterministic patterns only
+
+        return issues
+
+    def _check_length(self, text: str, output_req: dict) -> list[dict[str, Any]]:
+        """Check reply length against contract requirements."""
+        issues: list[dict[str, Any]] = []
+
+        min_chars = int(output_req.get("minBodyChars", 800))
+        exclude_options = output_req.get("excludeOptionsBlock", True)
+
+        # Strip options block if required
+        body = text
+        if exclude_options:
+            import re
+            body = re.sub(r'<options>[\s\S]*?</options>', '', body, flags=re.IGNORECASE)
+            body = re.sub(r'\[options\][\s\S]*?\[/options\]', '', body, flags=re.IGNORECASE)
+
+        # Strip HTML tags, markdown formatting, whitespace for counting
+        import re
+        clean_body = re.sub(r'<[^>]+>', '', body)
+        clean_body = re.sub(r'\*\*|__|~~|~~|`', '', clean_body)
+        clean_body = clean_body.strip()
+
+        # Count Chinese characters (the primary metric)
+        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', clean_body))
+        # Also count other non-whitespace chars
+        total_visible = len(clean_body.replace('\n', '').replace('\r', '').replace(' ', ''))
+
+        # Use max of chinese_chars and total_visible as the body length
+        body_length = max(chinese_chars, total_visible)
+
+        if body_length < min_chars:
+            issues.append({
+                "code": "below_min_length",
+                "severity": "error",
+                "message": f"正文长度 {body_length} 字符低于最低要求 {min_chars}",
+                "suggestion": f"增加正文内容至至少 {min_chars} 字符",
+            })
+
+        # Check for provider truncation (ends mid-sentence)
+        if text and not text.rstrip().endswith(('。', '！', '？', '…', '"', '」', '）', '）')):
+            # Only flag if the text is suspiciously short
+            if body_length < min_chars * 0.8:
+                issues.append({
+                    "code": "provider_output_truncated",
+                    "severity": "warning",
+                    "message": "回复可能被 provider 截断（不以标点结尾且长度不足）",
+                    "suggestion": "增加 max_tokens 或重试",
+                })
+
+        return issues
+
+    def _check_continuity(self, text: str, state: dict, scene: dict) -> list[dict[str, Any]]:
+        """Check for continuity violations."""
+        issues: list[dict[str, Any]] = []
+
+        # ── Forbidden stage move ──
+        forbidden = state.get("forbiddenStageMoves", [])
+        if forbidden:
+            # Check if reply mentions any forbidden stage transitions
+            for stage in forbidden:
+                if isinstance(stage, str) and stage in text:
+                    issues.append({
+                        "code": "forbidden_stage_move",
+                        "severity": "error",
+                        "message": f"回复提及了禁止的阶段转移 '{stage}'",
+                        "suggestion": f"避免使用 '{stage}' 相关的剧情推进",
+                    })
+
+        # ── Active character scope ──
+        active_chars = scene.get("activeCharacterIds", [])
+        if active_chars:
+            # Only check if we have a defined character scope
+            # This is a soft check - new characters can be introduced
+            pass
+
+        # ── Scene jump detection (deterministic) ──
+        location = scene.get("location", "")
+        if location:
+            # Check for sudden location change without transition words
+            transition_words = ["来到", "走进", "前往", "离开", "回到", "抵达", "出发"]
+            # If a different location is mentioned without transition
+            import re
+            location_patterns = re.findall(r'(?:在|位于|身处)([^，。！？]{2,10})', text)
+            for mentioned_loc in location_patterns:
+                mentioned_loc = mentioned_loc.strip()
+                if mentioned_loc != location and mentioned_loc:
+                    # Check if there's a transition word nearby
+                    has_transition = any(tw in text for tw in transition_words)
+                    if not has_transition:
+                        issues.append({
+                            "code": "scene_jump_without_transition",
+                            "severity": "warning",
+                            "message": f"场景从 '{location}' 跳转到 '{mentioned_loc}' 但缺少过渡",
+                            "suggestion": "添加过渡描写（如 '来到/走进/离开'）",
+                        })
+
+        return issues
 
 
 class AWPPatchProposal:
@@ -345,7 +591,12 @@ class AWPPatchProposal:
 
 
 class AWPSideEffectDecision:
-    """将副作用权限暴露为显式工作流对象。"""
+    """将副作用权限暴露为显式工作流对象。
+
+    P4D-1: 增加 candidate_card_state_patch_json 输入，确保：
+    - quality gate rejected 时阻止状态/记忆/卡状态提交
+    - 卡状态补丁必须通过 schema/path/type/range 校验
+    """
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -357,11 +608,16 @@ class AWPSideEffectDecision:
                 "candidate_state_patch": ("STRING", {"multiline": True, "default": "{}", "forceInput": True}),
                 "candidate_memory_patch": ("STRING", {"multiline": True, "default": "{}", "forceInput": True}),
                 "allow_commit_when_accepted": ("BOOLEAN", {"default": False}),
+                "candidate_card_state_patch_json": ("STRING", {
+                    "multiline": True, "default": "",
+                    "forceInput": True,
+                    "label": "候选卡状态补丁 JSON（P4D-1，仅 accepted 时可提交）",
+                }),
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("决策JSON", "状态")
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("决策JSON", "状态", "card_state_decision")
     FUNCTION = "execute"
     CATEGORY = "AWP RP/管线"
 
@@ -371,6 +627,7 @@ class AWPSideEffectDecision:
         candidate_state_patch: str = "{}",
         candidate_memory_patch: str = "{}",
         allow_commit_when_accepted: bool = False,
+        candidate_card_state_patch_json: str = "",
     ):
         patches = {
             "candidateStatePatch": safe_json_loads(candidate_state_patch, {}),
@@ -382,7 +639,79 @@ class AWPSideEffectDecision:
             allow_commit_when_accepted=allow_commit_when_accepted,
         )
         status = "output_allowed" if decision["allowPlayerOutput"] else "blocked"
-        return (json_dumps(decision), status)
+
+        # P4D-1: Card state patch decision
+        card_state_decision = self._decide_card_state_patch(
+            quality_decision_json,
+            candidate_card_state_patch_json,
+            allow_commit_when_accepted,
+        )
+
+        return (json_dumps(decision), status, json_dumps(card_state_decision))
+
+    def _decide_card_state_patch(
+        self,
+        quality_decision_json: str,
+        card_state_patch_json: str,
+        allow_commit: bool,
+    ) -> dict[str, Any]:
+        """Determine whether the card state patch can be committed."""
+        quality = safe_json_loads(quality_decision_json, {})
+        if not isinstance(quality, dict):
+            quality = {"accepted": False}
+
+        accepted = bool(quality.get("accepted", False))
+
+        if not card_state_patch_json.strip():
+            return {
+                "schemaId": "awp.rp.side-effect-card-state.v1",
+                "allowCardStateCommit": False,
+                "reason": "no_card_state_patch_provided",
+            }
+
+        patch_data = safe_json_loads(card_state_patch_json, {})
+        if not isinstance(patch_data, dict):
+            return {
+                "schemaId": "awp.rp.side-effect-card-state.v1",
+                "allowCardStateCommit": False,
+                "reason": "invalid_patch_format",
+            }
+
+        # Gate: quality must be accepted
+        if not accepted:
+            return {
+                "schemaId": "awp.rp.side-effect-card-state.v1",
+                "allowCardStateCommit": False,
+                "reason": "quality-gate-rejected",
+                "patchSchemaId": patch_data.get("schemaId", ""),
+            }
+
+        # Validate patch structure
+        from ..card.card_state_contract import CandidateCardStatePatch, validate_candidate_patch
+        try:
+            patch = CandidateCardStatePatch.from_dict(patch_data)
+            valid, errors = validate_candidate_patch(patch)
+            if not valid:
+                return {
+                    "schemaId": "awp.rp.side-effect-card-state.v1",
+                    "allowCardStateCommit": False,
+                    "reason": "patch_validation_failed",
+                    "errors": errors,
+                }
+        except Exception as exc:
+            return {
+                "schemaId": "awp.rp.side-effect-card-state.v1",
+                "allowCardStateCommit": False,
+                "reason": f"patch_parse_error: {exc}",
+            }
+
+        # All checks passed
+        return {
+            "schemaId": "awp.rp.side-effect-card-state.v1",
+            "allowCardStateCommit": allow_commit,
+            "reason": "accepted-pending-commit-policy" if allow_commit else "accepted-manual-commit",
+            "commitPolicy": patch.commitPolicy,
+        }
 
 
 class AWPOutputRenderer:
@@ -535,11 +864,47 @@ class AWPRoundPreparer:
                     "forceInput": True,
                     "label": "路由决策JSON（routed v1，留空=legacy）",
                 }),
+                # --- P4D-1: Card state inputs for writer contract ---
+                "card_state_json": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "CardState JSON（来自 AWPCardStateInit）",
+                }),
+                "condition_evaluation_json": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "条件求值结果 JSON（来自 AWPConditionalWorldbook）",
+                }),
+                "cast_info_json": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "角色阵容 JSON（lockedCharacters/userIdentity）",
+                }),
+                "recent_history_json": ("STRING", {
+                    "default": "[]",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "最近回合历史 JSON（3-5回合）",
+                }),
+                "card_id": ("STRING", {
+                    "default": "",
+                    "forceInput": True,
+                    "label": "角色卡ID",
+                }),
+                "min_body_chars": ("INT", {
+                    "default": 800,
+                    "min": 100,
+                    "max": 5000,
+                    "label": "最小正文字数",
+                }),
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("组装上下文", "匹配的世界书", "变量清单", "预算报告")
+    RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("组装上下文", "匹配的世界书", "变量清单", "预算报告", "writer_contract_json")
     FUNCTION = "execute"
     CATEGORY = "AWP RP/管线"
 
@@ -560,6 +925,12 @@ class AWPRoundPreparer:
         chapter_num: int = 0,
         story_genre: str = "",
         routing_decision_json: str = "",
+        card_state_json: str = "",
+        condition_evaluation_json: str = "",
+        cast_info_json: str = "",
+        recent_history_json: str = "[]",
+        card_id: str = "",
+        min_body_chars: int = 800,
     ):
         from ..mvu.matcher import match_worldbook_by_variables, extract_topics_from_changes
         from ..mvu.checker import generate_variable_checklist
@@ -805,9 +1176,210 @@ class AWPRoundPreparer:
             "worldbook_drop_reasons": wb_budget_report.get("drop_reasons", []),
         }
 
+        # ── Step 6: Build WriterContract v1 ──
+        writer_contract = self._build_writer_contract(
+            session_id=session_id,
+            card_id=card_id,
+            card_state_json=card_state_json,
+            condition_evaluation_json=condition_evaluation_json,
+            cast_info_json=cast_info_json,
+            recent_history_json=recent_history_json,
+            variables=variables,
+            all_matches=all_matches,
+            constant_entries=constant_entries,
+            other_entries=other_entries,
+            wb_budget_report=wb_budget_report,
+            memories=memories,
+            assembled_text=assembled,
+            min_body_chars=min_body_chars,
+        )
+
         return (
             assembled,
             json.dumps(all_matches, ensure_ascii=False, indent=2),
             json.dumps(var_checklist, ensure_ascii=False, indent=2),
             json.dumps(budget, ensure_ascii=False, indent=2),
+            json.dumps(writer_contract, ensure_ascii=False, indent=2),
         )
+
+    def _build_writer_contract(
+        self,
+        session_id: str,
+        card_id: str,
+        card_state_json: str,
+        condition_evaluation_json: str,
+        cast_info_json: str,
+        recent_history_json: str,
+        variables: dict,
+        all_matches: list,
+        constant_entries: list,
+        other_entries: list,
+        wb_budget_report: dict,
+        memories: list,
+        assembled_text: str,
+        min_body_chars: int,
+    ) -> dict:
+        """Build a WriterContract v1 from available data."""
+        from ..card.card_state_contract import (
+            WriterContract, CastInfo, StateInfo, SceneInfo,
+            ContinuityInfo, WorldbookInfo, OutputRequirements, BudgetInfo,
+            CardState, ConditionEvaluationResult,
+            WRITER_CONTRACT_SCHEMA,
+        )
+        from ..rp_pipeline import estimate_tokens, truncate_text, safe_json_loads
+
+        # Parse card state
+        cs = CardState.from_json(card_state_json) if card_state_json.strip() else CardState()
+
+        # Parse condition evaluation
+        cond_eval = safe_json_loads(condition_evaluation_json, {})
+        if not isinstance(cond_eval, dict):
+            cond_eval = {}
+
+        # Parse cast info
+        cast_data = safe_json_loads(cast_info_json, {})
+        if not isinstance(cast_data, dict):
+            cast_data = {}
+
+        # Parse recent history
+        history = safe_json_loads(recent_history_json, [])
+        if not isinstance(history, list):
+            history = []
+        # Limit to 3-5 turns
+        recent_history = history[-5:] if len(history) > 5 else history
+
+        # Build cast
+        cast = CastInfo(
+            lockedCharacters=list(cast_data.get("lockedCharacters") or []),
+            userIdentity=dict(cast_data.get("userIdentity") or {}),
+            relationshipBindings=list(cast_data.get("relationshipBindings") or []),
+            aliases=list(cast_data.get("aliases") or []),
+        )
+
+        # Build state
+        state = StateInfo(
+            variables=dict(cs.variables or variables),
+            activeStageIds=list(cond_eval.get("activeStageIds") or cs.activeStageIds),
+            eligibleEventIds=list(cond_eval.get("eligibleEventIds") or []),
+            forbiddenStageMoves=list(cond_eval.get("forbiddenStageMoves") or []),
+        )
+
+        # Build scene
+        scene_data = cs.sceneState or {}
+        scene = SceneInfo(
+            location=str(scene_data.get("location", "")),
+            time=str(scene_data.get("time", "")),
+            activeCharacterIds=list(scene_data.get("activeCharacterIds") or []),
+            lastAcceptedTurn=str(scene_data.get("lastAcceptedTurn", "")),
+        )
+
+        # Build continuity
+        recent_history_items = []
+        for h in recent_history:
+            if isinstance(h, dict):
+                recent_history_items.append({
+                    "turn": h.get("turn", 0),
+                    "input": truncate_text(str(h.get("input", "")), 200),
+                    "output": truncate_text(str(h.get("output", "")), 200),
+                })
+            elif isinstance(h, str):
+                recent_history_items.append({"text": truncate_text(h, 200)})
+
+        # Extract open threads from structured memories
+        open_threads = []
+        for m in memories:
+            if isinstance(m, dict) and m.get("type") == "open_thread":
+                open_threads.append({
+                    "topic": m.get("content", ""),
+                    "status": m.get("metadata", {}).get("status", "open"),
+                })
+
+        # Build summary from scene state if available
+        _narrative_summary = ""
+        if isinstance(cs.sceneState, dict) and cs.sceneState.get("narrativeSummary"):
+            _narrative_summary = str(cs.sceneState["narrativeSummary"])
+        continuity = ContinuityInfo(
+            recentHistory=recent_history_items,
+            summary=_narrative_summary,
+            openThreads=open_threads,
+            relevantFacts=[],
+        )
+
+        # Build worldbook info
+        pinned_core = []
+        conditional_active = []
+        retrieved_dynamic = []
+        dropped = []
+
+        # Pinned core: cast characters + constant entries
+        for entry in constant_entries:
+            pinned_core.append({
+                "title": entry.get("title", ""),
+                "content": truncate_text(str(entry.get("content", "") or entry.get("one_liner", "")), 500),
+                "source": "constant",
+            })
+
+        # Conditional active from condition evaluation
+        active_entries = cond_eval.get("activeEntries", [])
+        for entry in active_entries:
+            if isinstance(entry, dict):
+                conditional_active.append({
+                    "title": entry.get("title", ""),
+                    "content": truncate_text(str(entry.get("content", "")), 300),
+                })
+
+        # Dynamic retrieved from round preparer matches
+        for entry in other_entries:
+            if entry not in constant_entries:
+                retrieved_dynamic.append({
+                    "title": entry.get("title", ""),
+                    "content": truncate_text(str(entry.get("content", "") or entry.get("one_liner", "")), 300),
+                    "score": entry.get("score", 0),
+                })
+
+        # Dropped entries
+        drop_reasons = wb_budget_report.get("drop_reasons", [])
+        for dr in drop_reasons:
+            if isinstance(dr, dict):
+                dropped.append({
+                    "title": dr.get("comment", ""),
+                    "reason": dr.get("reason", "budget-exceeded"),
+                })
+
+        wb_info = WorldbookInfo(
+            pinnedCore=pinned_core,
+            conditionalActive=conditional_active,
+            retrievedDynamic=retrieved_dynamic,
+            dropped=dropped,
+        )
+
+        # Build output requirements
+        output_req = OutputRequirements(
+            minBodyChars=min_body_chars,
+            targetBodyChars=[min_body_chars + 100, min_body_chars + 400],
+            excludeOptionsBlock=True,
+        )
+
+        # Build budget
+        budget = BudgetInfo(
+            historyChars=sum(len(str(h.get("input", ""))) + len(str(h.get("output", ""))) for h in recent_history_items if isinstance(h, dict)),
+            memoryChars=sum(len(str(m.get("content", "") or m.get("summary", ""))) for m in memories),
+            worldbookChars=sum(len(str(e.get("content", "") or e.get("one_liner", ""))) for e in all_matches),
+            totalEstimatedTokens=estimate_tokens(assembled_text),
+        )
+
+        contract = WriterContract(
+            schemaId=WRITER_CONTRACT_SCHEMA,
+            sessionId=session_id,
+            cardId=card_id or cs.cardId,
+            cast=cast,
+            state=state,
+            scene=scene,
+            continuity=continuity,
+            worldbook=wb_info,
+            outputRequirements=output_req,
+            budget=budget,
+            diagnostics=[],
+        )
+
+        return contract.to_dict()

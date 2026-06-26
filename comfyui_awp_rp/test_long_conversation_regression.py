@@ -378,13 +378,15 @@ class OfflineExecutor:
             # ── 2) RoundPreparer (worldbook budget) ──
             from comfyui_awp_rp.nodes.pipeline_nodes import AWPRoundPreparer
             try:
-                assembled, matched_wb, checklist, budget_str = AWPRoundPreparer().execute(
+                # P4D-1: RoundPreparer now returns 5 values (added writer_contract_json)
+                _rp_result = AWPRoundPreparer().execute(
                     user_input=user_input,
                     session_id=self.session_id,
                     worldbook_index=json.dumps(WB_FIXTURE, ensure_ascii=False),
                     routing_decision_json=rj,
                     top_worldbook=5,
                 )
+                assembled, matched_wb, checklist, budget_str = _rp_result[0], _rp_result[1], _rp_result[2], _rp_result[3]
                 budget = json.loads(budget_str) if isinstance(budget_str, str) else budget_str
                 m.wb_considered = budget.get("worldbook_entries_considered", 0)
                 m.wb_included = budget.get("worldbook_entries_included", 0)

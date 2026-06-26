@@ -1,0 +1,170 @@
+{
+  "1": {
+    "inputs": {
+      "text": "我走进周语晴的房间，看到她正坐在窗边发呆。我轻声问道：「语晴，你还好吗？」"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {
+      "title": "玩家输入"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "rp-stateful-session-001"
+    },
+    "class_type": "AWPTextInput",
+    "_meta": {
+      "title": "会话ID"
+    }
+  },
+  "3": {
+    "inputs": {
+      "card_path": ""
+    },
+    "class_type": "AWPCardImport",
+    "_meta": {
+      "title": "① 导入角色卡",
+      "comment": "导入 SillyTavern V3 角色卡（.json 或 .png）"
+    }
+  },
+  "4": {
+    "inputs": {
+      "card_id": ["3", 0]
+    },
+    "class_type": "AWPCardSelect",
+    "_meta": {
+      "title": "② 选择角色卡",
+      "comment": "按 ID 选择角色卡，输出卡数据和世界书"
+    }
+  },
+  "5": {
+    "inputs": {
+      "card_id": ["4", 0],
+      "session_id": ["2", 0],
+      "card_data_json": ["4", 1]
+    },
+    "class_type": "AWPCardStateInit",
+    "_meta": {
+      "title": "③ 卡状态初始化",
+      "comment": "P4D-1: 初始化或加载卡状态。幂等：同一 card/session 重复调用不会覆盖已有状态"
+    }
+  },
+  "6": {
+    "inputs": {
+      "card_state_json": ["5", 0],
+      "worldbook_json": ["4", 2],
+      "player_input": ["1", 0]
+    },
+    "class_type": "AWPConditionalWorldbook",
+    "_meta": {
+      "title": "④ 条件世界书",
+      "comment": "P4D-1: 确定性条件求值，不调用 LLM。评估世界书条目的激活条件"
+    }
+  },
+  "7": {
+    "inputs": {
+      "namespace": "rp-stateful-session-001",
+      "routing_decision_json": ""
+    },
+    "class_type": "AWPMemoryRead",
+    "_meta": {
+      "title": "⑤ 记忆读取",
+      "comment": "读取长期记忆（受路由决策门控）"
+    }
+  },
+  "8": {
+    "inputs": {
+      "session_id": ["2", 0]
+    },
+    "class_type": "AWPSessionLoad",
+    "_meta": {
+      "title": "⑥ 会话加载",
+      "comment": "加载会话历史"
+    }
+  },
+  "9": {
+    "inputs": {
+      "user_input": ["1", 0],
+      "session_id": ["2", 0],
+      "current_variables": "{}",
+      "card_state_json": ["5", 0],
+      "condition_evaluation_json": ["6", 2],
+      "memory_context": ["7", 1],
+      "card_id": ["4", 0],
+      "min_body_chars": 800
+    },
+    "class_type": "AWPRoundPreparer",
+    "_meta": {
+      "title": "⑦ 回合预处理 (RoundPreparer)",
+      "comment": "P4D-1: 组装上下文 + 输出 WriterContract v1。接收卡状态和条件求值结果"
+    }
+  },
+  "10": {
+    "inputs": {
+      "context_bundle_json": ["9", 0],
+      "session_id": ["2", 0],
+      "writer_contract_json": ["9", 4]
+    },
+    "class_type": "AWPDialogueDirector",
+    "_meta": {
+      "title": "⑧ 对话导演 (Writer)",
+      "comment": "P4D-1A: writer_contract_json 从 RoundPreparer 接入，渲染为不可违背状态段进 prompt"
+    }
+  },
+  "11": {
+    "inputs": {
+      "reply": ["10", 0],
+      "writer_contract_json": ["9", 4]
+    },
+    "class_type": "AWPQualityGate",
+    "_meta": {
+      "title": "⑨ 质量门禁",
+      "comment": "P4D-1: 基于 WriterContract 做身份/长度/连续性确定性检查"
+    }
+  },
+  "12": {
+    "inputs": {
+      "quality_decision_json": ["11", 0],
+      "candidate_state_patch": ["10", 1],
+      "candidate_memory_patch": ["10", 2],
+      "allow_commit_when_accepted": false,
+      "candidate_card_state_patch_json": ""
+    },
+    "class_type": "AWPSideEffectDecision",
+    "_meta": {
+      "title": "⑩ 副作用决策",
+      "comment": "P4D-1: gate reject 时阻止状态/记忆/卡状态提交"
+    }
+  },
+  "13": {
+    "inputs": {
+      "reply": ["10", 0],
+      "quality_decision_json": ["11", 0],
+      "side_effect_decision_json": ["12", 0]
+    },
+    "class_type": "AWPOutputRenderer",
+    "_meta": {
+      "title": "⑪ 最终输出",
+      "comment": "组合最终玩家回复"
+    }
+  },
+  "_comments": {
+    "future_nodes": [
+      "候选卡状态补丁 (CandidateCardStatePatch) → 未来 AWPCardStateCommit 节点",
+      "AWPStateUpdateProposal → 未来 LLM State Updater 节点",
+      "AWPMVUNode（legacy adapter）仍可平行接入"
+    ],
+    "flow_summary": [
+      "Card Select → Card State Init → Conditional Worldbook",
+      "→ Memory Read + Session Load → Round Preparer (outputs WriterContract)",
+      "→ Dialogue Director → Quality Gate → Side Effect Decision → Output"
+    ],
+    "principles": [
+      "状态在 Writer 上游",
+      "条件世界书在 Writer 上游",
+      "Quality Gate 在提交之前",
+      "MainAgent 不是必经节点",
+      "不需要无限回路"
+    ]
+  }
+}

@@ -221,7 +221,7 @@ class P6P7RegressionTests(unittest.TestCase):
         ]
         rules = [{"source_path": "world.hooks", "split_pattern": "[,\\n]+", "prefix": ""}]
 
-        context, matches_json, _checklist, budget_json = AWPRoundPreparer().execute(
+        _rp = AWPRoundPreparer().execute(
             "I inspect the altar.",
             "injection-test",
             current_variables=json.dumps(variables),
@@ -229,6 +229,7 @@ class P6P7RegressionTests(unittest.TestCase):
             injection_rules_json=json.dumps(rules),
             top_worldbook=3,
         )
+        context, matches_json, _checklist, budget_json = _rp[0], _rp[1], _rp[2], _rp[3]
 
         matches = json.loads(matches_json)
         self.assertEqual(matches[0]["keyword"], "Moon Gate")
@@ -259,13 +260,14 @@ class P6P7RegressionTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            context, _matches, _checklist, budget_json = AWPRoundPreparer().execute(
+            _rp = AWPRoundPreparer().execute(
                 "I wait by the shrine.",
                 "contract-test",
                 project_root=tmp,
                 chapter_num=1,
                 story_genre="xianxia",
             )
+            context, _matches, _checklist, budget_json = _rp[0], _rp[1], _rp[2], _rp[3]
 
         self.assertIn("## Story Contract", context)
         self.assertIn("Force the shrine secret into the open.", context)
@@ -398,7 +400,8 @@ class P6P7RegressionTests(unittest.TestCase):
         self.assertNotIn("nodes", data)
         self.assertNotIn("links", data)
         class_types = {node["class_type"] for node in data.values()}
-        self.assertGreaterEqual(len(class_types), len(NODE_CLASS_MAPPINGS) - 3)
+        # P4D-1 added AWPCardStateInit + AWPConditionalWorldbook (optional, not in legacy API workflow)
+        self.assertGreaterEqual(len(class_types), len(NODE_CLASS_MAPPINGS) - 5)
         for required in [
             "AWPTextInput",
             "AWPCardImport",

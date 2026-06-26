@@ -452,11 +452,99 @@ def build_context_bundle(
     }
 
 
+def render_writer_contract_state(contract: dict[str, Any]) -> str:
+    """Render a WriterContract dict into a short, stable, writer-facing prompt section.
+
+    This is NOT raw JSON injection. It produces a structured markdown section
+    that tells the writer what is immutably true this turn:
+    - cast / user identity / relationships
+    - scene location and time
+    - active stage and events
+    - forbidden moves
+    - output length requirements
+    """
+    if not isinstance(contract, dict) or not contract.get("schemaId"):
+        return ""
+
+    lines: list[str] = ["## 当前不可违背状态"]
+
+    # ── Cast ──
+    cast = contract.get("cast", {})
+    if isinstance(cast, dict):
+        locked = cast.get("lockedCharacters", [])
+        if locked:
+            names = []
+            for c in locked:
+                if isinstance(c, dict):
+                    name = c.get("name", "")
+                    role = c.get("role", "")
+                    names.append(f"{name}({role})" if role else name)
+            if names:
+                lines.append(f"- 核心角色：{'、'.join(names)}")
+
+        user_id = cast.get("userIdentity", {})
+        if isinstance(user_id, dict) and user_id.get("name"):
+            lines.append(f"- 用户身份：{user_id['name']}")
+
+        bindings = cast.get("relationshipBindings", [])
+        if bindings:
+            rels = []
+            for b in bindings:
+                if isinstance(b, dict):
+                    src = b.get("source", "")
+                    tgt = b.get("target", "")
+                    rtype = b.get("type", "")
+                    if src and tgt:
+                        rels.append(f"{src}→{tgt}({rtype})" if rtype else f"{src}→{tgt}")
+            if rels:
+                lines.append(f"- 身份/关系：{'、'.join(rels)}")
+
+    # ── Scene ──
+    scene = contract.get("scene", {})
+    if isinstance(scene, dict):
+        loc = scene.get("location", "")
+        time = scene.get("time", "")
+        chars = scene.get("activeCharacterIds", [])
+        if loc:
+            lines.append(f"- 当前地点：{loc}")
+        if time:
+            lines.append(f"- 当前时间：{time}")
+        if chars:
+            lines.append(f"- 在场人物：{'、'.join(str(c) for c in chars)}")
+
+    # ── State: stages, events, forbidden ──
+    state = contract.get("state", {})
+    if isinstance(state, dict):
+        stages = state.get("activeStageIds", [])
+        if stages:
+            lines.append(f"- 当前阶段：{'、'.join(stages)}")
+        events = state.get("eligibleEventIds", [])
+        if events:
+            lines.append(f"- 已激活事件：{'、'.join(events)}")
+        forbidden = state.get("forbiddenStageMoves", [])
+        if forbidden:
+            lines.append(f"- 禁止阶段转移：{'、'.join(forbidden)}")
+
+    # ── Output requirements ──
+    output_req = contract.get("outputRequirements", {})
+    if isinstance(output_req, dict):
+        min_chars = output_req.get("minBodyChars", 0)
+        if min_chars > 0:
+            lines.append(f"- 正文要求：不少于 {min_chars} 中文字符，<options> 块不计入正文")
+
+    # Only return if we have content beyond the header
+    if len(lines) <= 1:
+        return ""
+
+    return "\n".join(lines)
+
+
 def build_director_prompt(
     context_bundle: Any,
     system_prompt: str = "",
     preset_sections_json: Any = "",
     reply_rules: str = "",
+    writer_contract_json: Any = "",
 ) -> str:
     bundle = safe_json_loads(context_bundle, {})
     if not isinstance(bundle, dict):
@@ -470,6 +558,10 @@ def build_director_prompt(
             if isinstance(section, dict) and section.get("content")
         )
 
+    # P4D-1A: Render writer contract as structured state section
+    contract = safe_json_loads(writer_contract_json, {})
+    contract_section = render_writer_contract_state(contract)
+
     parts = [
         system_prompt.strip(),
         "你是互动 RP 写手。只输出玩家可见的角色表演内容，不输出 JSON、状态栏、分析或调试信息。",
@@ -477,6 +569,9 @@ def build_director_prompt(
     ]
     if preset_text:
         parts.append(f"## Resolved Preset Rules\n{preset_text}")
+    # Contract state section goes BEFORE base_prompt (near generation point)
+    if contract_section:
+        parts.append(contract_section)
     if base_prompt:
         parts.append(base_prompt)
     if reply_rules.strip():
