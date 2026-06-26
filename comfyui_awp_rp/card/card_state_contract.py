@@ -32,6 +32,7 @@ WRITER_CONTRACT_SCHEMA = "awp.rp.writer-contract.v1"
 ROUND_SNAPSHOT_SCHEMA = "awp.rp.round-snapshot.v1"
 CANDIDATE_PATCH_SCHEMA = "awp.rp.candidate-card-state-patch.v1"
 CONDITION_EVAL_SCHEMA = "awp.rp.condition-evaluation.v1"
+COMMIT_RESULT_SCHEMA = "awp.rp.card-state-commit-result.v1"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -633,6 +634,12 @@ class CandidateCardStatePatch:
     eventMarks: list[dict[str, Any]] = field(default_factory=list)
     provenance: list[dict[str, Any]] = field(default_factory=list)
     commitPolicy: str = "pending"  # "pending" | "auto" | "manual"
+    # P4D-2A: stable identity for idempotent replay + optimistic revision lock.
+    # patchId: stable id for this exact candidate patch (dedup on replay).
+    # expectedRevision: the revision this patch was authored against; the commit
+    #   is rejected if the persisted revision has moved on (stale_revision).
+    patchId: str = ""
+    expectedRevision: int = -1  # -1 = not specified
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -653,6 +660,8 @@ class CandidateCardStatePatch:
             eventMarks=list(data.get("eventMarks") or []),
             provenance=list(data.get("provenance") or []),
             commitPolicy=str(data.get("commitPolicy", "pending")),
+            patchId=str(data.get("patchId", "")),
+            expectedRevision=int(data.get("expectedRevision", -1)),
         )
 
     @classmethod
@@ -667,7 +676,7 @@ class CandidateCardStatePatch:
 # Patch validation
 # ═══════════════════════════════════════════════════════════════════════════
 
-ALLOWED_PATCH_OPS = {"set", "add", "remove", "increment", "append"}
+ALLOWED_PATCH_OPS = {"set", "add", "remove", "increment", "append", "replace"}
 MAX_OPERATIONS_PER_PATCH = 50
 
 
@@ -770,6 +779,302 @@ def _remove_path(obj: dict, path: str) -> None:
         current = current[part]
     if isinstance(current, dict) and parts[-1] in current:
         del current[parts[-1]]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# P4D-2A: Strict formal commit patch application
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This is deliberately SEPARATE from the greeting-bootstrap replace-or-add
+# adapter (AWPCardStateInit._apply_initial_patches) and from the loose
+# apply_patch_operations() helper.
+#
+# Greeting bootstrap: may use replace-or-add semantics for tavern initial
+#   patch compatibility, limited to initialization, with diagnostics.
+# Formal commit: MUST be strict, predictable, and atomic. `replace` on a
+#   non-existent path is rejected; only `add` may create a new path. Any
+#   invalid operation rejects the ENTIRE patch — no partial writes.
+#
+# Paths are rooted at an allowed state subtree:
+#   variables / eventFlags / activeStageIds / sceneState
+# Writing to protected fields (schemaId/cardId/sessionId/revision/diagnostics)
+# or any other root is rejected.
+
+ALLOWED_COMMIT_ROOTS = ("variables", "eventFlags", "activeStageIds", "sceneState")
+PROTECTED_COMMIT_ROOTS = ("schemaId", "cardId", "sessionId", "revision", "diagnostics")
+
+# Operations permitted in a formal commit patch. `set` is treated as a strict
+# alias of `replace` (path must already exist). `add` creates a new path.
+COMMIT_PATCH_OPS = {"replace", "set", "add", "remove", "increment", "append"}
+
+
+def _normalize_rooted_path(path: str) -> tuple[str, list[str]]:
+    """Normalize a patch path to (root, rest_parts).
+
+    Accepts dot notation ('variables.score') or JSON Pointer ('/variables/score').
+    Returns ("", []) for an empty path.
+    """
+    p = path.strip()
+    # JSON Pointer form
+    if p.startswith("/"):
+        p = p.replace("/", ".")
+    p = p.strip(".")
+    if not p:
+        return "", []
+    parts = p.split(".")
+    return parts[0], [seg for seg in parts[1:] if seg != ""]
+
+
+def _resolve_strict(obj: Any, parts: list[str]) -> tuple[Any, bool]:
+    """Resolve a dotted path within a subtree. Returns (value, found)."""
+    cur = obj
+    for part in parts:
+        if isinstance(cur, dict):
+            if part in cur:
+                cur = cur[part]
+            else:
+                return None, False
+        elif isinstance(cur, list):
+            try:
+                idx = int(part)
+            except (ValueError, TypeError):
+                return None, False
+            if 0 <= idx < len(cur):
+                cur = cur[idx]
+            else:
+                return None, False
+        else:
+            return None, False
+    return cur, True
+
+
+def _set_existing_leaf(obj: Any, parts: list[str], value: Any) -> bool:
+    """Set a leaf value where the full path must already exist.
+
+    Returns True on success, False if the path (or a non-final segment) is absent.
+    """
+    if not parts:
+        # Replacing the whole subtree object is not meaningful for a dict/list
+        # root via this helper — callers handle root-level replaces separately.
+        return False
+    parent, found = _resolve_strict(obj, parts[:-1])
+    if not found or not isinstance(parent, (dict, list)):
+        return False
+    leaf = parts[-1]
+    if isinstance(parent, dict):
+        if leaf not in parent:
+            return False
+        parent[leaf] = value
+        return True
+    # list
+    try:
+        idx = int(leaf)
+    except (ValueError, TypeError):
+        return False
+    if 0 <= idx < len(parent):
+        parent[idx] = value
+        return True
+    return False
+
+
+def _add_new_leaf(obj: Any, parts: list[str], value: Any) -> tuple[bool, str]:
+    """Create a new leaf path. Intermediate dicts are created only where absent;
+    an existing non-dict intermediate is a type conflict (rejected).
+
+    Returns (ok, reason).
+    """
+    if not parts:
+        return False, "add_on_existing_path"
+    cur = obj
+    for part in parts[:-1]:
+        if isinstance(cur, dict):
+            if part in cur:
+                if not isinstance(cur[part], dict):
+                    return False, "add_intermediate_type_conflict"
+                cur = cur[part]
+            else:
+                cur[part] = {}
+                cur = cur[part]
+        else:
+            return False, "add_intermediate_type_conflict"
+    leaf = parts[-1]
+    if isinstance(cur, dict):
+        if leaf in cur:
+            return False, "add_on_existing_path"
+        cur[leaf] = value
+        return True, ""
+    return False, "add_target_not_dict"
+
+
+def _remove_existing_leaf(obj: Any, parts: list[str]) -> bool:
+    """Remove a leaf that must exist. Returns True on success."""
+    if not parts:
+        return False
+    parent, found = _resolve_strict(obj, parts[:-1])
+    if not found or not isinstance(parent, (dict, list)):
+        return False
+    leaf = parts[-1]
+    if isinstance(parent, dict):
+        if leaf in parent:
+            del parent[leaf]
+            return True
+        return False
+    try:
+        idx = int(leaf)
+    except (ValueError, TypeError):
+        return False
+    if 0 <= idx < len(parent):
+        del parent[idx]
+        return True
+    return False
+
+
+def apply_commit_operations_strict(
+    state: CardState,
+    operations: list[dict[str, Any]],
+) -> tuple[Optional[CardState], list[str], int]:
+    """Strict, atomic patch application for formal CardState commit.
+
+    Returns (new_state_or_None, errors, applied_count).
+    - On ANY invalid operation: returns (None, errors, 0). The input state is
+      not modified and no partial result is produced.
+    - On success: returns (new_state, [], applied_count). new_state.revision is
+      left equal to state.revision; the store bumps it inside the atomic
+      transaction. applied_count counts operations that would be applied.
+
+    Semantics:
+      replace / set : path must already exist (else rejected).
+      add           : path must NOT exist (creates it; only add may create).
+      remove        : path must exist.
+      increment     : path must exist and be numeric; value must be numeric.
+      append        : path must exist and be a list.
+
+    Paths must be rooted at one of ALLOWED_COMMIT_ROOTS. Protected fields and
+    unknown roots are rejected.
+    """
+    import copy
+
+    new_state = CardState.from_dict(state.to_dict())
+    container = {
+        "variables": new_state.variables,
+        "eventFlags": new_state.eventFlags,
+        "activeStageIds": new_state.activeStageIds,
+        "sceneState": new_state.sceneState,
+    }
+
+    errors: list[str] = []
+    applied = 0
+
+    for i, op in enumerate(operations):
+        if not isinstance(op, dict):
+            errors.append(f"operation[{i}] is not a dict")
+            continue
+        op_type = op.get("op")
+        path = op.get("path", "")
+        value = op.get("value")
+
+        if op_type not in COMMIT_PATCH_OPS:
+            errors.append(f"operation[{i}].op={op_type!r} not allowed in {COMMIT_PATCH_OPS}")
+            continue
+        if not isinstance(path, str) or not path.strip():
+            errors.append(f"operation[{i}].path is missing or empty")
+            continue
+
+        valid, reason = _validate_path(path)
+        if not valid:
+            errors.append(f"operation[{i}].path unsafe: {reason}")
+            continue
+
+        root, rest = _normalize_rooted_path(path)
+        if root in PROTECTED_COMMIT_ROOTS:
+            errors.append(f"operation[{i}] targets protected field '{root}'")
+            continue
+        if root not in ALLOWED_COMMIT_ROOTS:
+            errors.append(
+                f"operation[{i}] path root '{root}' not in allowed subtrees {ALLOWED_COMMIT_ROOTS}"
+            )
+            continue
+
+        target = container[root]
+
+        if op_type in ("replace", "set"):
+            if not rest:
+                # Whole-subtree replace (e.g. replace entire sceneState).
+                container[root] = value
+                setattr(new_state, root, value)
+            else:
+                if not _set_existing_leaf(target, rest, value):
+                    errors.append(
+                        f"operation[{i}] {op_type} on non-existent path '{path}'"
+                    )
+                    continue
+            applied += 1
+            continue
+
+        if op_type == "add":
+            ok, reason = _add_new_leaf(target, rest, value)
+            if not ok:
+                errors.append(f"operation[{i}] add rejected on '{path}': {reason}")
+                continue
+            applied += 1
+            continue
+
+        if op_type == "remove":
+            if not _remove_existing_leaf(target, rest):
+                errors.append(f"operation[{i}] remove on non-existent path '{path}'")
+                continue
+            applied += 1
+            continue
+
+        if op_type == "increment":
+            cur, found = _resolve_strict(target, rest)
+            if not found:
+                errors.append(f"operation[{i}] increment on non-existent path '{path}'")
+                continue
+            if isinstance(cur, bool) or not isinstance(cur, (int, float)):
+                errors.append(f"operation[{i}] increment on non-numeric at '{path}'")
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                errors.append(f"operation[{i}] increment value non-numeric")
+                continue
+            if not _set_existing_leaf(target, rest, cur + value):
+                errors.append(f"operation[{i}] increment failed on '{path}'")
+                continue
+            applied += 1
+            continue
+
+        if op_type == "append":
+            cur, found = _resolve_strict(target, rest)
+            if not found:
+                errors.append(f"operation[{i}] append on non-existent path '{path}'")
+                continue
+            if not isinstance(cur, list):
+                errors.append(f"operation[{i}] append on non-list at '{path}'")
+                continue
+            cur.append(value)
+            applied += 1
+            continue
+
+    if errors:
+        return (None, errors, 0)
+
+    return (new_state, [], applied)
+
+
+def compute_patch_hash(patch: "CandidateCardStatePatch") -> str:
+    """Deterministic hash of the patch's mutable content for idempotency checks.
+
+    Only operations + eventMarks are hashed (the parts that change state).
+    patchId, cardId, sessionId, provenance, commitPolicy are excluded so that
+    a replay of the same logical patch is recognized regardless of metadata.
+    """
+    import hashlib
+    payload = {
+        "operations": patch.operations,
+        "eventMarks": patch.eventMarks,
+    }
+    serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

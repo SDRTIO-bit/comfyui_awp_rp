@@ -27,7 +27,12 @@ from ..card.card_state_contract import (
     CandidateCardStatePatch,
     evaluate_condition,
     _resolve_json_path,
+    validate_candidate_patch,
+    apply_commit_operations_strict,
+    compute_patch_hash,
     CARD_STATE_SCHEMA,
+    CANDIDATE_PATCH_SCHEMA,
+    COMMIT_RESULT_SCHEMA,
 )
 from ..card.card_state_store import CardStateStore
 
@@ -1184,3 +1189,301 @@ class AWPConditionalWorldbook:
             if isinstance(tag, str) and tag.startswith("event_"):
                 return tag
         return ""
+
+
+class AWPCardStateCommit:
+    """P4D-2A: Deterministic, LLM-free, atomic CardState commit.
+
+    This is the ONLY sanctioned write path from a candidate patch into the
+    CardStateStore. It is not a Writer and not a state proposer.
+
+    Pipeline:
+        existing CardState
+        + CandidateCardStatePatch
+        + SideEffectDecision (card_state_decision, awp.rp.side-effect-card-state.v1)
+        + expected revision
+        → strict validation (gate + patch + atomic apply)
+        → atomic store write (revision bump + patch-id log, one transaction)
+        → updated state + commit result + diagnostics
+
+    Gate is an ABSOLUTE precondition. allow_manual_commit never bypasses the
+    QualityGate / SideEffectDecision; it only permits commitPolicy="manual"
+    patches through (a future human-approval mode).
+
+    expected_revision resolution (deterministic, no guessing):
+        1. explicit node input expected_revision (>= 0)
+        2. patch.expectedRevision (>= 0)
+        3. card_state.revision
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "card_state_json": ("STRING", {
+                    "multiline": True,
+                    "default": "{}",
+                    "placeholder": "当前 CardState JSON",
+                    "forceInput": True,
+                }),
+                "candidate_card_state_patch_json": ("STRING", {
+                    "multiline": True,
+                    "default": "{}",
+                    "placeholder": "CandidateCardStatePatch JSON（含 patchId/expectedRevision）",
+                    "forceInput": True,
+                }),
+                "side_effect_decision_json": ("STRING", {
+                    "multiline": True,
+                    "default": "{}",
+                    "placeholder": "AWPSideEffectDecision 的 card_state_decision 输出",
+                    "forceInput": True,
+                }),
+            },
+            "optional": {
+                "expected_revision": ("INT", {
+                    "default": -1,
+                    "tooltip": "显式期望 revision（>=0 生效；-1 表示未提供，改用 patch/card_state）",
+                }),
+                "allow_manual_commit": ("BOOLEAN", {"default": False}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("updated_card_state_json", "commit_result_json", "diagnostics_json")
+    FUNCTION = "execute"
+    CATEGORY = "AWP RP/状态"
+
+    _SIDE_EFFECT_SCHEMA = "awp.rp.side-effect-card-state.v1"
+
+    def execute(
+        self,
+        card_state_json: str,
+        candidate_card_state_patch_json: str,
+        side_effect_decision_json: str,
+        expected_revision: int = -1,
+        allow_manual_commit: bool = False,
+    ):
+        diagnostics: list[dict[str, Any]] = []
+
+        card_state = CardState.from_json(card_state_json)
+
+        result: dict[str, Any] = {
+            "schemaId": COMMIT_RESULT_SCHEMA,
+            "status": "invalid_patch",
+            "cardId": card_state.cardId,
+            "sessionId": card_state.sessionId,
+            "previousRevision": card_state.revision,
+            "currentRevision": card_state.revision,
+            "patchId": "",
+            "appliedOperationCount": 0,
+            "reasonCodes": [],
+        }
+
+        def reject(status: str, reason_codes: list[str], message: str = "") -> tuple:
+            result["status"] = status
+            result["reasonCodes"] = reason_codes
+            diag: dict[str, Any] = {
+                "code": status,
+                "severity": "warning",
+                "reasonCodes": reason_codes,
+            }
+            if message:
+                diag["message"] = message
+            diagnostics.append(diag)
+            # On rejection the store is untouched; return the original state.
+            return (card_state.to_json(), json.dumps(result, ensure_ascii=False),
+                    json.dumps(diagnostics, ensure_ascii=False))
+
+        # ── 1. Gate: side_effect_decision must be present, valid, and allow commit ──
+        sed = self._safe_json(side_effect_decision_json, None)
+        if not isinstance(sed, dict) or not sed:
+            return reject(
+                "rejected_by_gate",
+                ["side_effect_decision_missing_or_invalid"],
+                "side_effect_decision is missing or invalid",
+            )
+
+        sed_schema = sed.get("schemaId", "")
+        if sed_schema != self._SIDE_EFFECT_SCHEMA:
+            return reject(
+                "rejected_by_gate",
+                ["side_effect_decision_schema_mismatch"],
+                f"expected {self._SIDE_EFFECT_SCHEMA}, got {sed_schema!r}",
+            )
+
+        if sed.get("reason") == "quality-gate-rejected" or not sed.get("allowCardStateCommit", False):
+            # Distinguish quality-gate rejection from side-effect disallowal.
+            if sed.get("reason") == "quality-gate-rejected":
+                rc = ["quality_gate_not_accepted"]
+            else:
+                rc = ["side_effect_decision_disallows_commit"]
+            return reject(
+                "rejected_by_gate",
+                rc,
+                "gate precondition not satisfied",
+            )
+
+        # allow_manual_commit may never bypass the gate (already enforced above).
+
+        # ── 2. Candidate patch: present + valid schemaId + identity match ──
+        patch_data = self._safe_json(candidate_card_state_patch_json, None)
+        if not isinstance(patch_data, dict) or not patch_data:
+            return reject(
+                "invalid_patch",
+                ["candidate_patch_missing_or_invalid"],
+                "candidate patch is missing or invalid",
+            )
+
+        if patch_data.get("schemaId") != CANDIDATE_PATCH_SCHEMA:
+            return reject(
+                "invalid_patch",
+                ["patch_schema_id_mismatch"],
+                f"expected {CANDIDATE_PATCH_SCHEMA}",
+            )
+
+        patch = CandidateCardStatePatch.from_dict(patch_data)
+
+        if not patch.cardId or not patch.sessionId:
+            return reject("invalid_patch", ["patch_missing_identity"])
+
+        if patch.cardId != card_state.cardId:
+            return reject(
+                "invalid_patch",
+                [f"cardId_mismatch:patch={patch.cardId}:state={card_state.cardId}"],
+            )
+        if patch.sessionId != card_state.sessionId:
+            return reject(
+                "invalid_patch",
+                [f"sessionId_mismatch:patch={patch.sessionId}:state={card_state.sessionId}"],
+            )
+
+        result["cardId"] = patch.cardId
+        result["sessionId"] = patch.sessionId
+
+        # ── 3. commitPolicy gate ──
+        policy = patch.commitPolicy
+        if policy == "auto":
+            pass
+        elif policy == "manual":
+            if not allow_manual_commit:
+                return reject(
+                    "rejected_by_gate",
+                    ["commit_policy_disallow"],
+                    "commitPolicy='manual' requires allow_manual_commit=True",
+                )
+        else:  # "pending" or unknown
+            return reject(
+                "rejected_by_gate",
+                ["commit_policy_disallow"],
+                f"commitPolicy={policy!r} does not allow automatic commit",
+            )
+
+        # ── 4. Stable patchId required for idempotency ──
+        if not patch.patchId:
+            return reject("invalid_patch", ["missing_patch_id"])
+
+        result["patchId"] = patch.patchId
+
+        # ── 5. Patch structural validation ──
+        valid, errors = validate_candidate_patch(patch, card_state)
+        if not valid:
+            return reject("invalid_patch", errors, "patch validation failed")
+
+        # ── 6. Strict atomic apply (in-memory; no store write yet) ──
+        new_state, apply_errors, applied_count = apply_commit_operations_strict(
+            card_state, patch.operations,
+        )
+        if new_state is None:
+            return reject("invalid_patch", apply_errors, "strict patch application rejected")
+
+        result["appliedOperationCount"] = applied_count
+
+        # ── 7. Resolve expected revision (deterministic rule) ──
+        if expected_revision is not None and expected_revision >= 0:
+            eff_expected = expected_revision
+        elif patch.expectedRevision is not None and patch.expectedRevision >= 0:
+            eff_expected = patch.expectedRevision
+        else:
+            eff_expected = card_state.revision
+
+        # ── 8. Atomic store commit ──
+        patch_hash = compute_patch_hash(patch)
+        store = CardStateStore()
+        commit_outcome = store.commit_patch(
+            card_id=patch.cardId,
+            session_id=patch.sessionId,
+            new_state=new_state,
+            expected_revision=eff_expected,
+            patch_id=patch.patchId,
+            patch_hash=patch_hash,
+        )
+
+        status = commit_outcome["status"]
+        result["status"] = status
+        result["reasonCodes"] = commit_outcome.get("reasonCodes", [])
+
+        if status == "committed":
+            result["previousRevision"] = commit_outcome["previousRevision"]
+            result["currentRevision"] = commit_outcome["currentRevision"]
+            diagnostics.append({
+                "code": "committed",
+                "severity": "info",
+                "previousRevision": result["previousRevision"],
+                "currentRevision": result["currentRevision"],
+                "appliedOperationCount": applied_count,
+                "message": (
+                    f"patch {patch.patchId} committed "
+                    f"(rev {result['previousRevision']}→{result['currentRevision']})"
+                ),
+            })
+            updated = store.load(patch.cardId, patch.sessionId) or new_state
+            return (
+                updated.to_json(),
+                json.dumps(result, ensure_ascii=False),
+                json.dumps(diagnostics, ensure_ascii=False),
+            )
+
+        if status == "idempotent_replay":
+            result["previousRevision"] = commit_outcome.get("previousRevision", card_state.revision)
+            result["currentRevision"] = commit_outcome.get("currentRevision", card_state.revision)
+            result["appliedOperationCount"] = 0
+            diagnostics.append({
+                "code": "idempotent_replay",
+                "severity": "info",
+                "patchId": patch.patchId,
+                "currentRevision": result["currentRevision"],
+                "message": f"patch {patch.patchId} already applied; no rewrite",
+            })
+            updated = store.load(patch.cardId, patch.sessionId) or card_state
+            return (
+                updated.to_json(),
+                json.dumps(result, ensure_ascii=False),
+                json.dumps(diagnostics, ensure_ascii=False),
+            )
+
+        # stale_revision | patch_id_conflict | store_error
+        if "previousRevision" in commit_outcome:
+            result["previousRevision"] = commit_outcome["previousRevision"]
+        if "currentRevision" in commit_outcome and commit_outcome["currentRevision"] is not None:
+            result["currentRevision"] = commit_outcome["currentRevision"]
+        diagnostics.append({
+            "code": status,
+            "severity": "warning",
+            "reasonCodes": result["reasonCodes"],
+            "message": f"commit not applied: {status}",
+        })
+        # Store untouched — return original state.
+        return (
+            card_state.to_json(),
+            json.dumps(result, ensure_ascii=False),
+            json.dumps(diagnostics, ensure_ascii=False),
+        )
+
+    @staticmethod
+    def _safe_json(text: str, default: Any) -> Any:
+        try:
+            if not text or not text.strip():
+                return default
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return default

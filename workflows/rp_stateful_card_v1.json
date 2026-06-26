@@ -128,12 +128,12 @@
       "candidate_state_patch": ["10", 1],
       "candidate_memory_patch": ["10", 2],
       "allow_commit_when_accepted": false,
-      "candidate_card_state_patch_json": ""
+      "candidate_card_state_patch_json": ["14", 0]
     },
     "class_type": "AWPSideEffectDecision",
     "_meta": {
       "title": "⑩ 副作用决策",
-      "comment": "P4D-1: gate reject 时阻止状态/记忆/卡状态提交"
+      "comment": "P4D-1: gate reject 时阻止状态/记忆/卡状态提交。allow_commit_when_accepted 默认 false（保守）；启用后才允许卡状态提交"
     }
   },
   "13": {
@@ -148,23 +148,49 @@
       "comment": "组合最终玩家回复"
     }
   },
+  "14": {
+    "inputs": {
+      "json_text": "{\"schemaId\":\"awp.rp.candidate-card-state-patch.v1\",\"cardId\":\"\",\"sessionId\":\"\",\"operations\":[],\"eventMarks\":[],\"commitPolicy\":\"pending\",\"patchId\":\"\"}",
+      "validate_json": true
+    },
+    "class_type": "AWPJsonInput",
+    "_meta": {
+      "title": "⑫ 候选补丁 (外部 / 未来 StateUpdateProposal)",
+      "comment": "P4D-2A: 外部 CandidateCardStatePatch 输入。默认为空 patch（不写入任何状态）。未来 AWPStateUpdateProposal 节点将替换此输入。必须经 QualityGate→SideEffectDecision→AWPCardStateCommit 链路，不得直写 store"
+    }
+  },
+  "15": {
+    "inputs": {
+      "card_state_json": ["5", 0],
+      "candidate_card_state_patch_json": ["14", 0],
+      "side_effect_decision_json": ["12", 2],
+      "expected_revision": -1,
+      "allow_manual_commit": false
+    },
+    "class_type": "AWPCardStateCommit",
+    "_meta": {
+      "title": "⑬ 卡状态提交 (CardStateCommit)",
+      "comment": "P4D-2A: 状态闭环唯一写入口。严格验证 + 原子写入 CardStateStore。Gate 为绝对前置条件。expected_revision=-1 表示从 patch/card_state 取。下次执行由 ③ CardStateInit 从 store 读到新状态，无需回路"
+    }
+  },
   "_comments": {
     "future_nodes": [
-      "候选卡状态补丁 (CandidateCardStatePatch) → 未来 AWPCardStateCommit 节点",
-      "AWPStateUpdateProposal → 未来 LLM State Updater 节点",
+      "AWPStateUpdateProposal → 未来 LLM State Updater 节点，将替换节点 ⑫ 的外部候选补丁输入",
       "AWPMVUNode（legacy adapter）仍可平行接入"
     ],
     "flow_summary": [
       "Card Select → Card State Init → Conditional Worldbook",
       "→ Memory Read + Session Load → Round Preparer (outputs WriterContract)",
-      "→ Dialogue Director → Quality Gate → Side Effect Decision → Output"
+      "→ Dialogue Director → Quality Gate → Side Effect Decision → Output",
+      "→ Card State Commit (唯一状态写入口，消费 SideEffectDecision.card_state_decision)"
     ],
     "principles": [
       "状态在 Writer 上游",
       "条件世界书在 Writer 上游",
       "Quality Gate 在提交之前",
-      "MainAgent 不是必经节点",
-      "不需要无限回路"
+      "CardStateCommit 是状态唯一写入口，候选补丁不得绕过 Gate 直写 store",
+      "MainAgent 不是必经节点，也不是状态写入必经节点",
+      "不需要无限回路：下次执行由 CardStateInit 从 store 读到新状态"
     ]
   }
 }
