@@ -31,7 +31,7 @@ class AWPMemoryRead:
                     "placeholder": "类型过滤（如 event, relationship-change）",
                 }),
                 "limit": ("INT", {"default": 10, "min": 1, "max": 100}),
-                "force_refresh": ("BOOLEAN", {"default": True, "label_on": "是", "label_off": "否"}),
+                "run_id": ("INT", {"default": 0, "min": 0, "max": 999999999, "label": "运行ID（变化可刷新缓存）"}),
             },
         }
     
@@ -46,7 +46,7 @@ class AWPMemoryRead:
         tags_any: str = "",
         type_filter: str = "",
         limit: int = 10,
-        force_refresh: bool = True,
+        run_id: int = 0,
     ):
         """Read memories from storage."""
         memory = LongTermMemory()

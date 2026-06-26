@@ -520,10 +520,13 @@ def inject_inputs(workflow: dict, input_values: dict[str, list]) -> dict:
     return workflow
 
 
-def call_comfyui(prompt: dict) -> dict:
+def call_comfyui(prompt: dict, disable_cache: bool = False) -> dict:
     """Submit a prompt to ComfyUI and wait for results."""
     client_id = str(uuid.uuid4())[:8]
-    payload = json.dumps({"prompt": prompt["prompt"], "client_id": client_id}).encode("utf-8")
+    payload_data = {"prompt": prompt["prompt"], "client_id": client_id}
+    if disable_cache:
+        payload_data["disable_cache"] = True
+    payload = json.dumps(payload_data).encode("utf-8")
 
     req = urllib.request.Request(
         f"{COMFYUI_URL}/prompt",
@@ -1053,6 +1056,18 @@ def convert_to_api_format_with_overrides(workflow: dict, overrides: dict[str, di
     return prompt
 
 
+_run_counter = 0
+
+
+def _inject_run_id(workflow: dict) -> None:
+    """给 AWPMemoryRead 节点注入递增 run_id，避免 ComfyUI 缓存。"""
+    global _run_counter
+    _run_counter += 1
+    for nid, node in workflow.items():
+        if isinstance(node, dict) and node.get("class_type") == "AWPMemoryRead":
+            node.setdefault("inputs", {})["run_id"] = _run_counter
+
+
 # ═══ Handler ═══
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -1241,6 +1256,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             widget_injections, api_overrides = _roles_to_injections(wf, roles, analysis)
             wf = inject_inputs(wf, widget_injections)
+            # 注入递增 run_id 到 AWPMemoryRead 节点，避免缓存
+            _inject_run_id(wf)
             prompt = convert_to_api_format_with_overrides(wf, api_overrides)
             result = call_comfyui(prompt)
             self._json(result)
