@@ -4,14 +4,18 @@
       "text": "我推开祠堂老旧的木门，门轴发出刺耳的吱呀声。祠堂里弥漫着檀香的气息，光线透过窗棂洒在牌位上。我看到一位年轻妇人正跪在蒲团上，低声祈祷。\n\n我轻轻走到她身后三步处停下，压低声音问道：「姑娘，这间祠堂供奉的是哪位先祖？」"
     },
     "class_type": "AWPTextInput",
-    "_meta": {"title": "用户输入"}
+    "_meta": {
+      "title": "用户输入"
+    }
   },
   "2": {
     "inputs": {
       "text": "rp-session-001"
     },
     "class_type": "AWPTextInput",
-    "_meta": {"title": "会话ID"}
+    "_meta": {
+      "title": "会话ID"
+    }
   },
   "3": {
     "inputs": {
@@ -19,7 +23,9 @@
       "validate_json": true
     },
     "class_type": "AWPJsonInput",
-    "_meta": {"title": "当前变量状态 (MVU)"}
+    "_meta": {
+      "title": "当前变量状态 (MVU)"
+    }
   },
   "4": {
     "inputs": {
@@ -27,21 +33,27 @@
       "validate_json": true
     },
     "class_type": "AWPJsonInput",
-    "_meta": {"title": "世界书索引"}
+    "_meta": {
+      "title": "世界书索引"
+    }
   },
   "5": {
     "inputs": {
       "text": "## 叙事风格要求\n- 保持中国传统志怪小说的叙事质感\n- 对话使用半文半白的口语，人物语言符合身份\n- 环境描写细腻但不堆砌\n- 保持悬念，每轮至少埋下一个未被解答的细节\n\n## 玩家代理权保护\n- 绝对不要替玩家说话、决策或透露心理活动\n- 只描述NPC的反应和环境变化\n- 在回复末尾留出明确的行动入口"
     },
     "class_type": "AWPTextInput",
-    "_meta": {"title": "作者备注 (Author's Note)"}
+    "_meta": {
+      "title": "作者备注 (Author's Note)"
+    }
   },
   "6": {
     "inputs": {
       "text": "苏婉清说话轻柔断续，习惯先低头再答话。她提到祖父时会不自觉地摸手腕上的红绳。她对祠堂的每一个角落了如指掌，但从不主动提及后院。"
     },
     "class_type": "AWPTextInput",
-    "_meta": {"title": "角色备注 (Character Note)"}
+    "_meta": {
+      "title": "角色备注 (Character Note)"
+    }
   },
   "7": {
     "inputs": {
@@ -49,44 +61,70 @@
       "validate_json": true
     },
     "class_type": "AWPJsonInput",
-    "_meta": {"title": "变量注入规则"}
+    "_meta": {
+      "title": "变量注入规则"
+    }
   },
   "8": {
     "inputs": {
       "text": "{\"spec\":\"chara_card_v3\",\"data\":{\"name\":\"苏婉清\",\"description\":\"苏家小女儿，二十三岁。自三年前先祖牌位失踪后被族人怀疑疏远，从此少言寡语。她每日来祠堂上香，说是为族人祈福，实则在等什么人兑现一个旧日承诺。她手腕上常年系着一根褪色的红绳，是她祖父留给她的，从未取下。\",\"personality\":\"外柔内韧，看似温顺实则心思缜密。说话习惯先停顿再开口，从不直视对方的眼睛超过三秒。\",\"first_mes\":\"檀香的轻烟在梁间缭绕。妇人跪在蒲团上，闻声肩头微微一颤，却没有回头。\\n\\n她沉默了片刻，声音轻得像祠堂角落里未散的灰烬：「——苏家。」顿了顿，又补了一句：「祠堂只供奉苏家的先祖。」\\n\\n她缓缓起身，转身面对你。你这才看清她的眼睛——不是悲伤，是一种沉了很久、很久的等待。\",\"alternate_greetings\":[\"她低头看着蒲团上的纹路，声音很轻：\\n\\n「道长……是路过，还是有人托你来的？」\",\"她的手停在香炉上方，没有回头。\\n\\n「这间祠堂，已经很久没有外人来过了。三年。」\"],\"scenario\":\"游方道士路经桃花村，在祠堂中遇见正在上香的苏婉清。\",\"system_prompt\":\"你是苏婉清。你是桃花村苏家的小女儿，二十三岁。你说话轻柔、断续，习惯先停顿再开口。你对祠堂了如指掌但从不主动提后院。你手腕上系着祖父留下的褪色红绳，提到祖父时会不自觉摸它。你在等一个人兑现承诺，所以对每个踏入祠堂的陌生人都心存期待但不敢表露。\",\"tags\":[\"古风\",\"志怪\",\"悬疑\",\"角色扮演\"],\"creator\":\"AWP RP Demo\",\"character_version\":\"1.0\"}}"
     },
     "class_type": "AWPTextInput",
-    "_meta": {"title": "角色卡JSON"}
+    "_meta": {
+      "title": "角色卡JSON"
+    }
   },
   "9": {
     "inputs": {
-      "card_json": ["8", 0],
+      "card_json": [
+        "8",
+        0
+      ],
       "card_path": ""
     },
     "class_type": "AWPCardImport",
-    "_meta": {"title": "导入角色卡"}
+    "_meta": {
+      "title": "导入角色卡"
+    }
   },
   "10": {
     "inputs": {
-      "card_id": ["9", 0]
+      "card_id": [
+        "9",
+        0
+      ]
     },
     "class_type": "AWPCardSelect",
-    "_meta": {"title": "选择角色卡"}
+    "_meta": {
+      "title": "选择角色卡"
+    }
   },
   "11": {
     "inputs": {
-      "namespace": ["2", 0],
+      "namespace": [
+        "2",
+        0
+      ],
       "tags_any": "",
       "type_filter": "",
-      "limit": 10
+      "limit": 10,
+      "force_refresh": true
     },
     "class_type": "AWPMemoryRead",
-    "_meta": {"title": "读取长期记忆"}
+    "_meta": {
+      "title": "读取长期记忆"
+    }
   },
   "12": {
     "inputs": {
-      "query": ["1", 0],
-      "documents_json": ["4", 0],
+      "query": [
+        "1",
+        0
+      ],
+      "documents_json": [
+        "4",
+        0
+      ],
       "strategy": "hybrid",
       "limit": 5,
       "min_score": 0.01,
@@ -94,19 +132,45 @@
       "filter_type": ""
     },
     "class_type": "AWPRetriever",
-    "_meta": {"title": "混合检索 — 相关世界书/记忆召回"}
+    "_meta": {
+      "title": "混合检索 — 相关世界书/记忆召回"
+    }
   },
   "13": {
     "inputs": {
-      "user_input": ["1", 0],
-      "session_id": ["2", 0],
-      "current_variables": ["3", 0],
-      "worldbook_index": ["4", 0],
-      "memory_context": ["11", 1],
+      "user_input": [
+        "1",
+        0
+      ],
+      "session_id": [
+        "2",
+        0
+      ],
+      "current_variables": [
+        "3",
+        0
+      ],
+      "worldbook_index": [
+        "4",
+        0
+      ],
+      "memory_context": [
+        "11",
+        1
+      ],
       "var_diff": "{}",
-      "authors_note": ["5", 0],
-      "character_note": ["6", 0],
-      "injection_rules_json": ["7", 0],
+      "authors_note": [
+        "5",
+        0
+      ],
+      "character_note": [
+        "6",
+        0
+      ],
+      "injection_rules_json": [
+        "7",
+        0
+      ],
       "project_root": "",
       "chapter_num": 0,
       "story_genre": "",
@@ -114,20 +178,37 @@
       "top_worldbook": 4
     },
     "class_type": "AWPRoundPreparer",
-    "_meta": {"title": "回合预处理 — 变量驱动世界书匹配 + 注入 + 预算"}
+    "_meta": {
+      "title": "回合预处理 — 变量驱动世界书匹配 + 注入 + 预算"
+    }
   },
   "14": {
     "inputs": {
-      "user_input": ["1", 0],
-      "session_id": ["2", 0],
+      "user_input": [
+        "1",
+        0
+      ],
+      "session_id": [
+        "2",
+        0
+      ],
       "provider": "deepseek",
       "model": "deepseek-chat",
       "profile": "rp-writer",
       "context_mode": "full_context",
       "record_session": true,
-      "worldbook_context": ["13", 1],
-      "card_id": ["10", 0],
-      "memory_context": ["11", 1],
+      "worldbook_context": [
+        "13",
+        1
+      ],
+      "card_id": [
+        "10",
+        0
+      ],
+      "memory_context": [
+        "11",
+        1
+      ],
       "preset_id": "rp-default-v1",
       "temperature": 0.85,
       "max_tokens": 2048,
@@ -135,76 +216,153 @@
       "max_iterations": 5,
       "tool_ids": "memory_read,worldbook_search,retrieval_search,card_get,continuity_check,npc_activity_scan,delegate_to_sub_agent",
       "skill_ids": "rp_thinking_flow,hard_gates_full,rp_persona,rp_player_agency,rp_continuity,anti_ai_writing",
-      "current_variables": ["3", 0]
+      "current_variables": [
+        "3",
+        0
+      ]
     },
     "class_type": "AWPMainAgent",
-    "_meta": {"title": "主Agent — Agent Loop + 工具调用 + 自省 + MVU"}
+    "_meta": {
+      "title": "主Agent — Agent Loop + 工具调用 + 自省 + MVU"
+    }
   },
   "15": {
     "inputs": {
-      "ai_response": ["14", 0],
-      "current_variables": ["3", 0],
-      "worldbook_index": ["4", 0],
+      "ai_response": [
+        "14",
+        0
+      ],
+      "current_variables": [
+        "3",
+        0
+      ],
+      "worldbook_index": [
+        "4",
+        0
+      ],
       "enable_worldbook_match": true,
       "enable_validation": true,
       "top_n_matches": 4
     },
     "class_type": "AWPMVUNode",
-    "_meta": {"title": "MVU — 变量命令执行 + 世界书匹配 + 审计"}
+    "_meta": {
+      "title": "MVU — 变量命令执行 + 世界书匹配 + 审计"
+    }
   },
   "16": {
     "inputs": {
-      "text": ["14", 0],
-      "variables": ["15", 0]
+      "text": [
+        "14",
+        0
+      ],
+      "variables": [
+        "15",
+        0
+      ]
     },
     "class_type": "AWPMVUMacroResolver",
-    "_meta": {"title": "解析输出中的 {{getvar::}} / {{formatvar::}} 宏"}
+    "_meta": {
+      "title": "解析输出中的 {{getvar::}} / {{formatvar::}} 宏"
+    }
   },
   "17": {
     "inputs": {
-      "reply": ["14", 0],
+      "reply": [
+        "14",
+        0
+      ],
       "critic_review_json": ""
     },
     "class_type": "AWPQualityGate",
-    "_meta": {"title": "质量门禁 — 7维文本检查"}
+    "_meta": {
+      "title": "质量门禁 — 7维文本检查"
+    }
   },
   "18": {
     "inputs": {
-      "session_id": ["2", 0],
-      "parsed_input_json": ["1", 0],
-      "reply": ["14", 0],
-      "character_id": ["10", 0],
+      "session_id": [
+        "2",
+        0
+      ],
+      "parsed_input_json": [
+        "1",
+        0
+      ],
+      "reply": [
+        "14",
+        0
+      ],
+      "character_id": [
+        "10",
+        0
+      ],
       "scene_id": "shrine_scene_01"
     },
     "class_type": "AWPPatchProposal",
-    "_meta": {"title": "候选补丁 — 状态/记忆变更提案"}
+    "_meta": {
+      "title": "候选补丁 — 状态/记忆变更提案"
+    }
   },
   "19": {
     "inputs": {
-      "quality_decision_json": ["17", 0],
-      "candidate_state_patch": ["18", 0],
-      "candidate_memory_patch": ["18", 1],
+      "quality_decision_json": [
+        "17",
+        0
+      ],
+      "candidate_state_patch": [
+        "18",
+        0
+      ],
+      "candidate_memory_patch": [
+        "18",
+        1
+      ],
       "allow_commit_when_accepted": true
     },
     "class_type": "AWPSideEffectDecision",
-    "_meta": {"title": "副作用决策 — 是否提交补丁"}
+    "_meta": {
+      "title": "副作用决策 — 是否提交补丁"
+    }
   },
   "20": {
     "inputs": {
-      "reply": ["16", 0],
+      "reply": [
+        "16",
+        0
+      ],
       "context_bundle_json": "{}",
-      "candidate_state_patch": ["18", 0],
-      "candidate_memory_patch": ["18", 1],
-      "quality_decision_json": ["17", 0],
-      "side_effect_decision_json": ["19", 0]
+      "candidate_state_patch": [
+        "18",
+        0
+      ],
+      "candidate_memory_patch": [
+        "18",
+        1
+      ],
+      "quality_decision_json": [
+        "17",
+        0
+      ],
+      "side_effect_decision_json": [
+        "19",
+        0
+      ]
     },
     "class_type": "AWPOutputRenderer",
-    "_meta": {"title": "最终输出组装"}
+    "_meta": {
+      "title": "最终输出组装"
+    }
   },
   "21": {
     "inputs": {
-      "namespace": ["2", 0],
-      "content": ["14", 0],
+      "namespace": [
+        "2",
+        0
+      ],
+      "content": [
+        "14",
+        0
+      ],
       "title": "本轮叙事记忆",
       "memory_type": "event",
       "tags": "narrative,turn",
@@ -212,113 +370,178 @@
       "importance": 0.6
     },
     "class_type": "AWPMemoryWrite",
-    "_meta": {"title": "写入长期记忆 — 本轮叙事"}
+    "_meta": {
+      "title": "写入长期记忆 — 本轮叙事"
+    }
   },
   "22": {
     "inputs": {
-      "session_id": ["2", 0],
-      "summary": ["14", 0],
+      "session_id": [
+        "2",
+        0
+      ],
+      "summary": [
+        "14",
+        0
+      ],
       "clear_session": false
     },
     "class_type": "AWPSessionSave",
-    "_meta": {"title": "保存会话快照"}
+    "_meta": {
+      "title": "保存会话快照"
+    }
   },
   "23": {
     "inputs": {
-      "text": ["16", 0],
+      "text": [
+        "16",
+        0
+      ],
       "label": "final_rp_reply"
     },
     "class_type": "AWPTextOutput",
-    "_meta": {"title": "最终回复文本（宏已解析）"}
+    "_meta": {
+      "title": "最终回复文本（宏已解析）"
+    }
   },
   "24": {
     "inputs": {
-      "json_text": ["14", 2],
+      "json_text": [
+        "14",
+        2
+      ],
       "label": "agent_metadata",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "Agent 元数据 (Token/工具调用/反思记录)"}
+    "_meta": {
+      "title": "Agent 元数据 (Token/工具调用/反思记录)"
+    }
   },
   "25": {
     "inputs": {
-      "json_text": ["15", 0],
+      "json_text": [
+        "15",
+        0
+      ],
       "label": "updated_variables",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "更新后变量 — 下一轮 current_variables"}
+    "_meta": {
+      "title": "更新后变量 — 下一轮 current_variables"
+    }
   },
   "26": {
     "inputs": {
-      "json_text": ["15", 1],
+      "json_text": [
+        "15",
+        1
+      ],
       "label": "variable_changes",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "本轮变量变更记录 — 下一轮 var_diff"}
+    "_meta": {
+      "title": "本轮变量变更记录 — 下一轮 var_diff"
+    }
   },
   "27": {
     "inputs": {
-      "json_text": ["15", 4],
+      "json_text": [
+        "15",
+        4
+      ],
       "label": "mvu_audit_report",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "MVU 审计报告 (Deep diff)"}
+    "_meta": {
+      "title": "MVU 审计报告 (Deep diff)"
+    }
   },
   "28": {
     "inputs": {
-      "json_text": ["15", 3],
+      "json_text": [
+        "15",
+        3
+      ],
       "label": "variable_checklist",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "下轮变量清单 (Checker)"}
+    "_meta": {
+      "title": "下轮变量清单 (Checker)"
+    }
   },
   "29": {
     "inputs": {
-      "json_text": ["17", 0],
+      "json_text": [
+        "17",
+        0
+      ],
       "label": "quality_decision",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "质量门决策 JSON"}
+    "_meta": {
+      "title": "质量门决策 JSON"
+    }
   },
   "30": {
     "inputs": {
-      "json_text": ["19", 0],
+      "json_text": [
+        "19",
+        0
+      ],
       "label": "side_effect_decision",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "副作用决策 JSON"}
+    "_meta": {
+      "title": "副作用决策 JSON"
+    }
   },
   "31": {
     "inputs": {
-      "json_text": ["12", 1],
+      "json_text": [
+        "12",
+        1
+      ],
       "label": "retrieval_results",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "检索召回结果 JSON"}
+    "_meta": {
+      "title": "检索召回结果 JSON"
+    }
   },
   "32": {
     "inputs": {
-      "json_text": ["13", 1],
+      "json_text": [
+        "13",
+        1
+      ],
       "label": "matched_worldbook",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "回合预处理匹配的世界书"}
+    "_meta": {
+      "title": "回合预处理匹配的世界书"
+    }
   },
   "33": {
     "inputs": {
-      "json_text": ["20", 1],
+      "json_text": [
+        "20",
+        1
+      ],
       "label": "final_output_json",
       "pretty": true
     },
     "class_type": "AWPJsonOutput",
-    "_meta": {"title": "最终输出 JSON (含补丁/决策汇总)"}
+    "_meta": {
+      "title": "最终输出 JSON (含补丁/决策汇总)"
+    }
   }
 }
