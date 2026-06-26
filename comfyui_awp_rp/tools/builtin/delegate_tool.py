@@ -214,10 +214,14 @@ def register_delegate_tool(registry: ToolRegistry) -> None:
     registry.register(ToolDefinition(
         name="delegate_to_sub_agent",
         description=(
-            f"Delegate a sub-task to a specialized sub-agent. The sub-agent runs its own "
-            f"reasoning loop and returns the result. Available profiles: {profile_list}. "
-            f"Use this when you need specialized help (e.g. review, context research, "
-            f"fact extraction, deconstruction, deslop)."
+            f"将子任务委托给专门的子 Agent 处理。子 Agent 有自己的推理循环，会返回结果。\n"
+            f"可用 Profile: {profile_list}. \n"
+            f"**必须在以下场景使用**：\n"
+            f"1. 深入分析角色心理和动机\n"
+            f"2. 检查叙事连续性（时间线、前后矛盾）\n"
+            f"3. 处理复杂情感场景（冲突、转折、重大决定）\n"
+            f"4. 生成角色的深度对话或内心独白\n"
+            f"5. 世界书条目的交叉引用和一致性检查"
         ),
         parameters={
             "type": "object",
