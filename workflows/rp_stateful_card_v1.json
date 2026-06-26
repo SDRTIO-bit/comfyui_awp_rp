@@ -150,13 +150,19 @@
   },
   "14": {
     "inputs": {
-      "json_text": "{\"schemaId\":\"awp.rp.candidate-card-state-patch.v1\",\"cardId\":\"\",\"sessionId\":\"\",\"operations\":[],\"eventMarks\":[],\"commitPolicy\":\"pending\",\"patchId\":\"\"}",
-      "validate_json": true
+      "accepted_reply": ["10", 0],
+      "card_state_json": ["5", 0],
+      "writer_contract_json": ["9", 4],
+      "quality_decision_json": ["11", 0],
+      "state_update_rules_json": "{}",
+      "source_turn": 0,
+      "max_tokens": 256,
+      "dry_run": false
     },
-    "class_type": "AWPJsonInput",
+    "class_type": "AWPStateUpdateProposal",
     "_meta": {
-      "title": "⑫ 候选补丁 (外部 / 未来 StateUpdateProposal)",
-      "comment": "P4D-2A: 外部 CandidateCardStatePatch 输入。默认为空 patch（不写入任何状态）。未来 AWPStateUpdateProposal 节点将替换此输入。必须经 QualityGate→SideEffectDecision→AWPCardStateCommit 链路，不得直写 store"
+      "title": "⑫ 状态更新提案 (StateUpdateProposal)",
+      "comment": "P4D-2B: 从已接受叙事中提取候选状态变化。Gate reject 时不调用 LLM。输出 CandidateCardStatePatch，由代码生成 patchId/expectedRevision/commitPolicy。不写 CardStateStore"
     }
   },
   "15": {
@@ -175,19 +181,23 @@
   },
   "_comments": {
     "future_nodes": [
-      "AWPStateUpdateProposal → 未来 LLM State Updater 节点，将替换节点 ⑫ 的外部候选补丁输入",
+      "关系数值状态系统（relationship numeric state）— 等规则系统成熟后接入",
+      "剧情阶段自动升级 — 需要明确规则后才允许",
       "AWPMVUNode（legacy adapter）仍可平行接入"
     ],
     "flow_summary": [
       "Card Select → Card State Init → Conditional Worldbook",
       "→ Memory Read + Session Load → Round Preparer (outputs WriterContract)",
-      "→ Dialogue Director → Quality Gate → Side Effect Decision → Output",
-      "→ Card State Commit (唯一状态写入口，消费 SideEffectDecision.card_state_decision)"
+      "→ Dialogue Director → Quality Gate",
+      "→ StateUpdateProposal (gate-check → LLM propose → dry validate)",
+      "→ Side Effect Decision → Card State Commit (唯一状态写入口)",
+      "→ Output"
     ],
     "principles": [
       "状态在 Writer 上游",
       "条件世界书在 Writer 上游",
       "Quality Gate 在提交之前",
+      "StateUpdateProposal 只提议，不写 store",
       "CardStateCommit 是状态唯一写入口，候选补丁不得绕过 Gate 直写 store",
       "MainAgent 不是必经节点，也不是状态写入必经节点",
       "不需要无限回路：下次执行由 CardStateInit 从 store 读到新状态"

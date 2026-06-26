@@ -685,8 +685,9 @@ class TestReferenceWorkflow(unittest.TestCase):
         self.assertEqual(len(patch_link), 2)
         src_id, _ = patch_link
         src = self.wf[src_id]
-        self.assertEqual(src["class_type"], "AWPJsonInput",
-                         "candidate patch source must be the external JSON input node")
+        # P4D-2A had AWPJsonInput; P4D-2B replaced it with AWPStateUpdateProposal.
+        self.assertIn(src["class_type"], ("AWPJsonInput", "AWPStateUpdateProposal"),
+                      "candidate patch source must be a known patch provider node")
 
     def test_28_gate_to_commit_link_exists(self):
         """28: SideEffectDecision (gate) feeds AWPCardStateCommit."""

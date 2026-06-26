@@ -36,7 +36,7 @@ from .pipeline_nodes import (
 )
 from .mvu_node import AWPMVUNode, AWPMVUMacroResolver
 from .router_nodes import AWPRoundRouter, AWPSubAgentOrchestrator
-from .card_state_nodes import AWPCardStateInit, AWPConditionalWorldbook, AWPCardStateCommit
+from .card_state_nodes import AWPCardStateInit, AWPConditionalWorldbook, AWPCardStateCommit, AWPStateUpdateProposal
 
 NODE_CLASS_MAPPINGS = {
     "AWPMainAgent": AWPMainAgent,
@@ -83,6 +83,7 @@ NODE_CLASS_MAPPINGS = {
     "AWPCardStateInit": AWPCardStateInit,
     "AWPConditionalWorldbook": AWPConditionalWorldbook,
     "AWPCardStateCommit": AWPCardStateCommit,
+    "AWPStateUpdateProposal": AWPStateUpdateProposal,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -130,6 +131,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AWPCardStateInit": "卡状态初始化",
     "AWPConditionalWorldbook": "条件世界书",
     "AWPCardStateCommit": "卡状态提交",
+    "AWPStateUpdateProposal": "状态更新提案",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
