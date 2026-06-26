@@ -5,6 +5,70 @@
 
 ---
 
+## 项目背景
+
+### 项目概述
+本项目是 ComfyUI 的自定义节点包 **AWP RP**（AI Writing Partner - Role Play），用于角色扮演（RP）和小说/长篇小说工作流。项目通过 ComfyUI 的节点系统实现 AI 驱动的交互式叙事。
+
+### 核心架构
+```
+用户输入 → AWPMainAgent → 工具调用 → 生成回复
+                ↓
+        AWPRoundPreparer（回合预处理）
+                ↓
+        AWPMemoryRead/Write（长期记忆）
+                ↓
+        AWPWorldbook（世界书系统）
+```
+
+### 关键节点说明
+
+| 节点 | 文件 | 功能 |
+|------|------|------|
+| `AWPMainAgent` | `comfyui_awp_rp/nodes/main_agent.py` | 主 Agent，负责生成回复、调用工具、管理 Agent Loop |
+| `AWPRoundPreparer` | `comfyui_awp_rp/nodes/pipeline_nodes.py` | 回合预处理，组装上下文（世界书匹配、记忆召回、变量清单） |
+| `AWPMemoryRead` | `comfyui_awp_rp/nodes/memory_nodes.py` | 从长期存储中读取记忆 |
+| `AWPMemoryWrite` | `comfyui_awp_rp/nodes/memory_nodes.py` | 写入记忆到长期存储 |
+| `AWPQualityGate` | `comfyui_awp_rp/nodes/pipeline_nodes.py` | 质量门禁，检查回复质量 |
+| `AWPTextOutput` | `comfyui_awp_rp/nodes/input_nodes.py` | 最终回复输出（Node 23） |
+
+### 工具系统
+
+主 Agent 拥有以下工具：
+- `memory_read` - 读取长期记忆
+- `worldbook_search` - 搜索世界书
+- `retrieval_search` - 检索搜索
+- `card_get` - 获取角色卡
+- `continuity_check` - 连续性检查
+- `npc_activity_scan` - NPC 活动扫描
+- `delegate_to_sub_agent` - 委托给子 Agent
+
+### 子 Agent 系统
+
+子 Agent 使用专用 Profile 处理特定任务：
+- `rp-critic` - RP 评审，检查世界观一致性、角色一致性
+- `rp-director` - RP 导演，创建场景计划
+- `rp-memory-curator` - 记忆管理，提取关键事件
+- `novel-reviewer` - 小说评审
+- `novel-deconstruction` - 小说解构
+
+### 当前测试环境
+
+- **工作流**：`rp_full_features_api_workflow.json`（33 节点）
+- **角色卡**：桃花村的公媳（card_65af4496c7eb9f1f）
+- **世界书**：36 个条目（24 个常开，12 个选择性）
+- **LLM 提供商**：DeepSeek（deepseek-chat）
+- **测试轮次**：40 轮长对话
+
+### 已解决的问题
+
+1. **常开世界书加载**：从 4,700 tokens 提升到 64,000+ tokens
+2. **长期记忆缓存**：通过注入递增 run_id 解决 ComfyUI 缓存问题
+3. **内部推理泄露**：在系统提示词中明确禁止输出内部推理
+4. **工具调用强化**：从 0-2 次/轮提升到 3 次/轮
+
+---
+
 ## 问题 1：子 Agent 未被调用
 
 ### 问题描述
