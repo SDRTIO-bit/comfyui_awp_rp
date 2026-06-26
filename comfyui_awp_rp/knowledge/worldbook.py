@@ -297,16 +297,94 @@ def filter_st_worldbook_entries(
     return filtered
 
 
+def _estimate_tokens(text: str) -> int:
+    """Stable, dependency-free token estimate (≈ len//4)."""
+    return max(1, (len(text) + 3) // 4) if text else 0
+
+
+def _entry_token_cost(entry: dict[str, Any]) -> int:
+    content = str(entry.get("content", "")) + str(entry.get("comment") or entry.get("title") or "")
+    return _estimate_tokens(content)
+
+
+def apply_worldbook_budget(
+    entries: list[dict[str, Any]],
+    budget_tokens: int,
+    *,
+    keep_core: bool = True,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Apply a token budget to worldbook entries.
+
+    Core/constant entries are kept first (up to budget); remaining budget is
+    spent on triggered entries by descending priority. Returns
+    ``(included, report)`` where ``report`` records considered/included/dropped
+    counts, token estimates, and per-entry drop reasons.
+
+    This stops constant entries from accumulating unbounded (the 64k explosion
+    root cause). It never mutates the input entries.
+    """
+    considered = list(entries)
+    # Sort: constant first, then by priority desc, stable.
+    def _sort_key(e: dict[str, Any]) -> tuple[int, float]:
+        is_const = bool(e.get("constant") or (e.get("metadata") or {}).get("constant"))
+        priority = float(e.get("priority", 0) or 0)
+        return (0 if is_const else 1, -priority)
+
+    ordered = sorted(considered, key=_sort_key)
+
+    included: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    used_tokens = 0
+    core_tokens = 0
+    retrieved_tokens = 0
+
+    for e in ordered:
+        is_const = bool(e.get("constant") or (e.get("metadata") or {}).get("constant"))
+        cost = _entry_token_cost(e)
+        if keep_core and is_const:
+            # Core entries are always eligible but still count against budget.
+            if used_tokens + cost <= budget_tokens or not included:
+                included.append(e)
+                used_tokens += cost
+                core_tokens += cost
+            else:
+                dropped.append({"comment": e.get("comment") or e.get("title"), "reason": "budget-core-overflow"})
+        else:
+            if used_tokens + cost <= budget_tokens:
+                included.append(e)
+                used_tokens += cost
+                retrieved_tokens += cost
+            else:
+                dropped.append({"comment": e.get("comment") or e.get("title"), "reason": "budget-exceeded"})
+
+    report = {
+        "worldbook_entries_considered": len(considered),
+        "worldbook_entries_included": len(included),
+        "worldbook_entries_dropped": len(dropped),
+        "core_worldbook_token_estimate": core_tokens,
+        "retrieved_worldbook_token_estimate": retrieved_tokens,
+        "total_token_estimate": used_tokens,
+        "budget_tokens": budget_tokens,
+        "drop_reasons": dropped,
+    }
+    return included, report
+
+
 def build_filtered_worldbook_text(
     entries: list[dict[str, Any]],
     user_input: str,
     history_text: str = "",
     max_entries: int = 40,
+    budget_tokens: int = 8000,
 ) -> str:
     """Build a filtered worldbook context string.
 
     Returns a formatted string suitable for injection into the system prompt.
     Only includes entries that pass :func:`filter_st_worldbook_entries`.
+
+    A token ``budget_tokens`` cap (legacy-fallback default 8000) is enforced via
+    :func:`apply_worldbook_budget` so constant entries can no longer accumulate
+    to 64k+. Set ``budget_tokens=0`` to disable the cap (not recommended).
     """
     filtered = filter_st_worldbook_entries(entries, user_input, history_text)
 
@@ -321,6 +399,9 @@ def build_filtered_worldbook_text(
 
     filtered.sort(key=_sort_key)
     filtered = filtered[:max_entries]
+
+    if budget_tokens and budget_tokens > 0:
+        filtered, _report = apply_worldbook_budget(filtered, budget_tokens)
 
     parts: list[str] = ["## World & Character Lore"]
     for entry in filtered:

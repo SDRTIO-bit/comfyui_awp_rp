@@ -102,6 +102,12 @@ class AWPMainAgent:
                     "forceInput": True,
                     "label": "当前变量状态（MVU）",
                 }),
+                # --- V1 routed context packet (optional) ---
+                "round_context_packet": ("STRING", {
+                    "default": "",
+                    "forceInput": True,
+                    "label": "回合上下文包（routed v1，留空=legacy）",
+                }),
             },
         }
 
@@ -131,6 +137,7 @@ class AWPMainAgent:
         tool_ids: str = "",
         skill_ids: str = "",
         current_variables: str = "{}",
+        round_context_packet: str = "",
     ):
         """Execute the main agent workflow.
 
@@ -191,6 +198,22 @@ class AWPMainAgent:
             protected_tokens=500,
         )
 
+        # --- V1: parse routed context packet (if any) ---
+        routed_packet: dict[str, Any] = {}
+        is_routed = False
+        subagent_advice: list[dict[str, Any]] = []
+        if round_context_packet and round_context_packet.strip():
+            try:
+                _pkt = json.loads(round_context_packet)
+                if isinstance(_pkt, dict):
+                    routed_packet = _pkt
+                    is_routed = str(_pkt.get("context_owner", "")) == "routed"
+                    _advice = _pkt.get("subagent_advice")
+                    if isinstance(_advice, list):
+                        subagent_advice = [a for a in _advice if isinstance(a, dict)]
+            except json.JSONDecodeError:
+                routed_packet = {}
+
         # Build system prompt
         system_prompt = agent_profile.foundational_system_prompt
 
@@ -225,8 +248,16 @@ class AWPMainAgent:
         context_parts: list[str] = []
 
         # --- Smart worldbook: filter by ST rules when card_id is provided ---
+        # V1: when a routed context packet owns the context, the worldbook has
+        # already been filtered + budget-capped by AWPRoundPreparer. We must NOT
+        # re-run build_filtered_worldbook_text here (that was the 64k double-
+        # injection root cause). Legacy path (no packet) keeps the fallback,
+        # which now also enforces a token budget.
         resolved_worldbook = worldbook_context
-        if card_id and context_mode in ("full_context", "no_memory"):
+        if is_routed:
+            # Routed: trust the packet's worldbook_context verbatim. No re-filter.
+            pass
+        elif card_id and context_mode in ("full_context", "no_memory"):
             try:
                 from ..card.import_card import CardImporter
                 from ..knowledge.worldbook import build_filtered_worldbook_text
@@ -243,6 +274,7 @@ class AWPMainAgent:
                         entries=card["worldbook"],
                         user_input=user_input,
                         history_text=history_text,
+                        budget_tokens=8000,
                     )
                     if filtered_wb:
                         resolved_worldbook = filtered_wb
@@ -290,6 +322,20 @@ class AWPMainAgent:
             system_parts.append(skills_content)
         if context_text:
             system_parts.append(context_text)
+
+        # --- V1: inject sub-agent advice (internal reference only) ---
+        if subagent_advice:
+            advice_lines: list[str] = []
+            for a in subagent_advice:
+                if a.get("ok") and a.get("advice"):
+                    advice_lines.append(
+                        f"[{a.get('profile')}] {a.get('advice')}"
+                    )
+            if advice_lines:
+                system_parts.append(
+                    "## 子 Agent 建议（仅供参考，不得原样暴露给玩家，不得出现「评审认为/导演建议」等措辞）\n"
+                    + "\n".join(advice_lines)
+                )
 
         full_system = "\n\n".join(system_parts)
 
@@ -377,27 +423,24 @@ class AWPMainAgent:
         llm_tools = registry.to_llm_definitions(available_tools) if available_tools else None
         executor = ToolExecutor(registry)
 
-        # Build initial messages
-        # Add a tool-usage引导 to the system message when tools are available
+        # Build initial messages.
+        # V1: tool calls are NO LONGER a per-turn obligation. Memory and
+        # worldbook are pre-fetched by the router/Preparer; sub-agents are
+        # dispatched by the orchestrator. The writer keeps tool access only as
+        # a fallback to close runtime fact gaps it genuinely cannot answer
+        # from the provided context.
         loop_system = full_system
         if llm_tools:
             tool_names = [t.name for t in available_tools]
             loop_system = (
                 full_system
-                + "\n\n## 工具使用指引\n"
-                + "你拥有以下工具可用：" + ", ".join(tool_names) + "\n"
-                + "### 强制规则\n"
-                + "1. **每轮必须调用工具**：回复前必须调用 memory_read 读取长期记忆，调用 worldbook_search 检索相关设定。\n"
-                + "2. **禁止跳过工具**：不要凭记忆直接回答，必须通过工具获取最新上下文。\n"
-                + "3. **积极使用子 Agent**：当需要深入分析角色心理、检查连续性、或处理复杂情节时，使用 delegate_to_sub_agent 委托子 Agent。\n"
-                + "   **必须使用子 Agent 的场景**：\n"
-                + "   - 用户提出涉及角色内心世界的问题（如「她怎么想」「她怨我吗」）\n"
-                + "   - 需要生成角色的深度独白或回忆\n"
-                + "   - 处理情感冲突或重大决定场景\n"
-                + "   - 检查叙事前后是否矛盾\n"
-                + "   - 世界书条目之间的交叉引用\n"
-                + "4. **禁止输出内部推理**：思考过程（Step 1-5）必须在内部完成，绝对不能输出到回复中。回复只包含叙事文本和选项。\n"
-                + "5. **回复格式**：回复必须以叙事文本开头，以 <options> 结尾，中间不要有分析、注释或元信息。"
+                + "\n\n## 工具使用（仅作补充）\n"
+                + "可用工具：" + ", ".join(tool_names) + "。上下文已由回合预处理层提供，"
+                + "无需每轮调用工具。仅当你发现上下文存在缺口、确需补充事实时才调用。\n"
+                + "### 输出规则\n"
+                + "1. **禁止输出内部推理**：思考过程必须在内部完成，绝不输出 Step/分析/计划/元话语。"
+                + "不得出现「好，现在」「让我」「进入角色」「根据设定」等开头语。\n"
+                + "2. **回复格式**：回复以叙事文本开头，以 <options> 结尾，中间不要有分析、注释或元信息。"
             )
 
         # --- P5.3: Action Options instruction ---
@@ -505,40 +548,65 @@ class AWPMainAgent:
             # Reached max_iterations
             final_text = (last_result.text if last_result else "") + "\n\n[Agent reached max iterations]"
 
-        # --- Agent self-reflection: quality check + auto-retry ---
-        reflection_attempts = 0
-        max_reflections = 2
-        reflection_log: list[dict[str, Any]] = []
+        # --- Writer repair: sanitization + quality gate + bounded single retry ---
+        # V1 (repaired): at most 1 repair retry → 2 total writer calls.
+        # A FINAL safety barrier runs after the loop so REJECT_GIVE_UP is
+        # provably reachable — any internal process tag or advice leak that
+        # survives repair is replaced with a safe diagnostic string and never
+        # delivered to downstream nodes.
+        from ..runtime.output_sanitizer import sanitize_output, SanitizerAction
+        max_repair_retries = 1
+        repair_attempts = 0
+        repair_log: list[dict[str, Any]] = []
+        sanitizer_log: list[dict[str, Any]] = []
+        writer_call_count = 1  # initial generation
 
-        while reflection_attempts < max_reflections:
-            # Run deterministic quality gate on output
+        while repair_attempts < max_repair_retries:
+            # 1) Sanitize (explicit-tag / advice-leak / leading meta-phrase)
+            verdict = sanitize_output(
+                final_text, attempt=repair_attempts, max_retries=max_repair_retries
+            )
+            if verdict.action == SanitizerAction.SCRUB_PREFIX:
+                final_text = verdict.cleaned_text
+                sanitizer_log.append(verdict.to_dict())
+            elif verdict.action == SanitizerAction.REJECT_RETRY:
+                sanitizer_log.append(verdict.to_dict())
+            # (REJECT_GIVE_UP cannot fire inside the loop when repair_attempts < max_repair_retries;
+            #  it is handled by the final barrier after the loop.)
+
+            # 2) Deterministic quality gate
             from ..rp_pipeline import apply_quality_gate
             gate_result = apply_quality_gate(final_text)
             failed = [i for i in gate_result.get("issues", []) if i.get("severity") == "error"]
 
-            if not failed:
+            needs_retry = (
+                verdict.action == SanitizerAction.REJECT_RETRY or bool(failed)
+            )
+            if not needs_retry:
                 break  # Passed — accept
 
-            reflection_attempts += 1
+            repair_attempts += 1
             failed_codes = [f.get("code") for f in failed]
             suggestion = "、".join(f.get("suggestion", "") for f in failed if f.get("suggestion"))
+            if verdict.action == SanitizerAction.REJECT_RETRY:
+                suggestion = (suggestion + "；" if suggestion else "") + "只输出故事正文，删除任何内部过程或元话语开头。"
 
-            reflection_log.append({
-                "attempt": reflection_attempts,
+            repair_log.append({
+                "repair_attempt": repair_attempts,
                 "failed_checks": failed_codes,
                 "suggestion": suggestion,
+                "sanitizer_action": verdict.action.value,
             })
 
-            # Build revision feedback and append as a new user message
             revision_prompt = (
                 f"## 质量门禁未通过\n"
-                f"失败项：{'、'.join(failed_codes)}\n"
+                f"失败项：{'、'.join(failed_codes) if failed_codes else '内部过程泄露'}\n"
                 f"修订指引：{suggestion}\n\n"
-                f"请修改以上回复，确保通过所有质量检查。只输出修订后的叙事文本，不要输出分析。"
+                f"请修改以上回复，确保通过所有质量检查。只输出修订后的叙事文本，不要输出分析、计划或元话语。"
             )
             messages.append({"role": "user", "content": revision_prompt})
 
-            # One more LLM call to revise
+            # One repair LLM call
             try:
                 revise_result, _, _ = router.complete_with_tools(
                     node_config=node_config,
@@ -547,10 +615,33 @@ class AWPMainAgent:
                     tool_choice="auto" if llm_tools else None,
                 )
                 final_text = revise_result.text
+                writer_call_count += 1
                 total_input_tokens += revise_result.token_usage.input
                 total_output_tokens += revise_result.token_usage.output
             except Exception:
-                break  # Revision failed — keep current text
+                break  # Revision failed — keep current text; barrier will still check
+
+        # ── FINAL safety barrier ──────────────────────────────────────────────
+        # At this point repair_attempts may be 0 (accepted outright) or 1
+        # (retry exhausted). Pass attempt=max_repair_retries so sanitize_output
+        # can ONLY return ACCEPT, SCRUB_PREFIX, or REJECT_GIVE_UP (never
+        # REJECT_RETRY — we have no more retries left).
+        final_verdict = sanitize_output(
+            final_text, attempt=max_repair_retries, max_retries=max_repair_retries
+        )
+        if final_verdict.action == SanitizerAction.REJECT_GIVE_UP:
+            final_text = (
+                "[生成安全失败] 本回合内容未能通过质量检查。"
+                "请重新发送消息或调整输入后再试。"
+            )
+            sanitizer_log.append({
+                "barrier": "REJECT_GIVE_UP",
+                "reasons": final_verdict.reasons,
+                "removed_snippet": final_verdict.removed_snippet,
+            })
+        elif final_verdict.action == SanitizerAction.SCRUB_PREFIX:
+            final_text = final_verdict.cleaned_text
+            sanitizer_log.append(final_verdict.to_dict())
 
         # Record session
         should_record = bool(record_session and context_mode != "stateless_no_context")
@@ -645,8 +736,12 @@ class AWPMainAgent:
             "session_id": session_id,
             "turn_index": len(history_turns) + (1 if should_record else 0),
             "mvu_commands": len(commands),
-            "reflection_attempts": reflection_attempts,
-            "reflection_log": reflection_log,
+            "writer_call_count": writer_call_count,
+            "repair_retries_used": repair_attempts,
+            "repair_log": repair_log,
+            "sanitizer_log": sanitizer_log,
+            "routed_context": is_routed,
+            "subagent_advice_count": len(subagent_advice),
             "story_plan": story_plan_result,
             "action_options": _extract_action_options(final_text) if final_text else [],
         }

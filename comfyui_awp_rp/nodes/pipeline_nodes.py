@@ -529,6 +529,12 @@ class AWPRoundPreparer:
                     "max": 8,
                     "label": "世界书匹配数",
                 }),
+                "routing_decision_json": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "路由决策JSON（routed v1，留空=legacy）",
+                }),
             },
         }
 
@@ -553,6 +559,7 @@ class AWPRoundPreparer:
         project_root: str = "",
         chapter_num: int = 0,
         story_genre: str = "",
+        routing_decision_json: str = "",
     ):
         from ..mvu.matcher import match_worldbook_by_variables, extract_topics_from_changes
         from ..mvu.checker import generate_variable_checklist
@@ -687,6 +694,42 @@ class AWPRoundPreparer:
         other_entries = [m for m in deduped if m.get("source") != "constant"]
         all_matches = constant_entries + other_entries[:top_worldbook]
 
+        # ── Step 2.6: Worldbook token budget (V1) ──
+        # Constant entries used to accumulate unbounded (the 64k root cause on
+        # this path too). Enforce a budget from the routing decision (default
+        # 4000), keeping core/constant first then triggered by score.
+        from ..knowledge.worldbook import apply_worldbook_budget
+        try:
+            _routing = json.loads(routing_decision_json) if routing_decision_json.strip() else {}
+        except json.JSONDecodeError:
+            _routing = {}
+        wb_budget = int(
+            (_routing.get("worldbook_budget_tokens") if isinstance(_routing, dict) else None)
+            or 4000
+        )
+        # Adapt all_matches to the budget function's entry shape.
+        _wb_for_budget = [
+            {
+                "comment": m.get("title") or m.get("keyword"),
+                "content": m.get("content") or m.get("one_liner", ""),
+                "constant": m.get("source") == "constant",
+                "priority": float(m.get("score", 0) or 0),
+            }
+            for m in all_matches
+        ]
+        _included_wb, wb_budget_report = apply_worldbook_budget(
+            _wb_for_budget, wb_budget, keep_core=True
+        )
+        included_keys = [
+            (e.get("comment"), bool(e.get("constant"))) for e in _included_wb
+        ]
+        # Re-filter all_matches preserving order by included comment+constancy.
+        included_set = set(included_keys)
+        all_matches = [
+            m for m in all_matches
+            if ((m.get("title") or m.get("keyword")), m.get("source") == "constant") in included_set
+        ]
+
         # ── Step 3: Variable checklist ──
         var_checklist = generate_variable_checklist(variables, v_diff)
 
@@ -752,6 +795,14 @@ class AWPRoundPreparer:
             "story_contract_loaded": story_contract_loaded,
             "memory_records": len(memories),
             "warnings": warnings,
+            "context_owner": "routed" if routing_decision_json.strip() else "legacy",
+            "core_worldbook_token_estimate": wb_budget_report.get("core_worldbook_token_estimate", 0),
+            "retrieved_worldbook_token_estimate": wb_budget_report.get("retrieved_worldbook_token_estimate", 0),
+            "worldbook_entries_considered": wb_budget_report.get("worldbook_entries_considered", 0),
+            "worldbook_entries_included": wb_budget_report.get("worldbook_entries_included", 0),
+            "worldbook_entries_dropped": wb_budget_report.get("worldbook_entries_dropped", 0),
+            "worldbook_budget_tokens": wb_budget,
+            "worldbook_drop_reasons": wb_budget_report.get("drop_reasons", []),
         }
 
         return (

@@ -35,6 +35,7 @@ from .pipeline_nodes import (
     AWPRoundPreparer,
 )
 from .mvu_node import AWPMVUNode, AWPMVUMacroResolver
+from .router_nodes import AWPRoundRouter, AWPSubAgentOrchestrator
 
 NODE_CLASS_MAPPINGS = {
     "AWPMainAgent": AWPMainAgent,
@@ -76,6 +77,8 @@ NODE_CLASS_MAPPINGS = {
     "AWPToolList": AWPToolList,
     "AWPMVUNode": AWPMVUNode,
     "AWPMVUMacroResolver": AWPMVUMacroResolver,
+    "AWPRoundRouter": AWPRoundRouter,
+    "AWPSubAgentOrchestrator": AWPSubAgentOrchestrator,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -118,6 +121,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AWPToolList": "工具列表",
     "AWPMVUNode": "MVU变量更新",
     "AWPMVUMacroResolver": "MVU宏解析",
+    "AWPRoundRouter": "回合路由",
+    "AWPSubAgentOrchestrator": "子Agent编排",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

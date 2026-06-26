@@ -9,8 +9,14 @@ from ..memory.long_term import LongTermMemory
 
 
 class AWPMemoryRead:
-    """从长期存储中读取记忆。"""
-    
+    """从长期存储中读取记忆。
+
+    V1: 受 routing decision 控制。当 ``routing_decision_json`` 提供且其
+    ``should_read_memory`` 为 False 时，本节点不做真实读取，返回空（不报错）。
+    这消除了"工作流预读 + agent loop 强制工具读取"的双重读取问题：是否读
+    由路由器统一决定。旧工作流不传 routing_decision 时保持原行为。
+    """
+
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -32,14 +38,20 @@ class AWPMemoryRead:
                 }),
                 "limit": ("INT", {"default": 10, "min": 1, "max": 100}),
                 "run_id": ("INT", {"default": 0, "min": 0, "max": 999999999, "label": "运行ID（变化可刷新缓存）"}),
+                "routing_decision_json": ("STRING", {
+                    "default": "",
+                    "multiline": True,
+                    "forceInput": True,
+                    "label": "路由决策JSON（routed v1，留空=legacy）",
+                }),
             },
         }
-    
+
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("记忆文本", "记忆JSON")
     FUNCTION = "execute"
     CATEGORY = "AWP RP/记忆"
-    
+
     def execute(
         self,
         namespace: str,
@@ -47,19 +59,34 @@ class AWPMemoryRead:
         type_filter: str = "",
         limit: int = 10,
         run_id: int = 0,
+        routing_decision_json: str = "",
     ):
-        """Read memories from storage."""
+        """Read memories from storage, gated by routing decision when provided."""
+        # V1: honor routing decision. should_read_memory=False → no real read.
+        if routing_decision_json and routing_decision_json.strip():
+            try:
+                decision = json.loads(routing_decision_json)
+            except json.JSONDecodeError:
+                decision = {}
+            if isinstance(decision, dict) and decision.get("should_read_memory") is False:
+                # Routing said skip — return empty, no error.
+                return ("(memory read skipped by router)", "[]")
+
         memory = LongTermMemory()
-        
+
         tags = [t.strip() for t in tags_any.split(",") if t.strip()] if tags_any else None
         type_f = type_filter if type_filter else None
-        
-        records = memory.query(
-            namespace=namespace,
-            tags_any=tags,
-            type_filter=type_f,
-            limit=limit,
-        )
+
+        try:
+            records = memory.query(
+                namespace=namespace,
+                tags_any=tags,
+                type_filter=type_f,
+                limit=limit,
+            )
+        except Exception:
+            # fail-open: never block the main reply on a memory read error
+            records = []
         
         # Format as readable text
         if records:
