@@ -293,6 +293,36 @@ class AWPMainAgent:
         if context_mode == "full_context" and memory_context:
             context_parts.append(f"## Long-term Memories\n{memory_context}")
 
+        # ── V1 / Phase 2: Structured memories (story_facts, open_threads, scene_state) ─
+        if context_mode in ("full_context", "no_memory") and routed_packet:
+            sm = routed_packet.get("structured_memories")
+            if isinstance(sm, dict) and (sm.get("story_facts") or sm.get("open_threads") or sm.get("scene_state")):
+                parts: list[str] = []
+                facts = sm.get("story_facts") or []
+                if facts:
+                    fact_lines = "\n".join(
+                        f"- [{f.get('turn','?')}] {f.get('summary','')}"
+                        for f in facts[:8]
+                    )
+                    parts.append(f"## Story Facts\n{fact_lines}")
+                threads = sm.get("open_threads") or []
+                if threads:
+                    thread_lines = "\n".join(
+                        f"- [{t.get('status','open')}] {t.get('topic','')}"
+                        for t in threads[:5]
+                    )
+                    parts.append(f"## Open Threads\n{thread_lines}")
+                scene = sm.get("scene_state")
+                if isinstance(scene, dict) and scene.get("location"):
+                    parts.append(
+                        f"## Current Scene\n地点:{scene.get('location','')} "
+                        f"时间:{scene.get('time_of_day','')} "
+                        f"在场:{','.join(scene.get('characters_present',[]))} "
+                        f"氛围:{scene.get('mood','')}"
+                    )
+                if parts:
+                    context_parts.append("\n\n".join(parts))
+
         if context_mode == "full_context" and summary:
             context_parts.append(f"## Conversation Summary\n{summary}")
 
@@ -722,6 +752,23 @@ class AWPMainAgent:
                 updated_variables = json.dumps(new_data, ensure_ascii=False, indent=2)
                 changes_json = json.dumps(changes, ensure_ascii=False, indent=2)
 
+        # --- Phase 2: Structured memory curation (fail-open) ---
+        memory_curation_log: dict[str, Any] = {"triggered": False}
+        if enable_agent_loop and is_routed and final_text:
+            _pkt_should_curate = routed_packet.get("should_curate_memory", False)
+            if _pkt_should_curate:
+                try:
+                    memory_curation_log = self._run_memory_curator(
+                        session_id=session_id,
+                        user_input=user_input,
+                        final_text=final_text,
+                        current_variables=updated_variables,
+                        turn_index=len(history_turns) + (1 if should_record else 0),
+                        curation_trigger=routed_packet.get("memory_curation_trigger", ""),
+                    )
+                except Exception as exc:  # noqa: BLE001 — fail-open
+                    memory_curation_log = {"triggered": True, "error": str(exc)[:200], "written": 0}
+
         metadata = {
             "provider": resolved_provider if last_result else provider,
             "model": resolved_model if last_result else model,
@@ -744,12 +791,75 @@ class AWPMainAgent:
             "subagent_advice_count": len(subagent_advice),
             "story_plan": story_plan_result,
             "action_options": _extract_action_options(final_text) if final_text else [],
+            "memory_curation": memory_curation_log,
         }
         session_context = json.dumps({
             "session_id": session_id,
             "turn_count": len(history_turns) + (1 if should_record else 0),
         })
         return (final_text, session_context, json.dumps(metadata, ensure_ascii=False), updated_variables, changes_json)
+
+
+    def _run_memory_curator(
+        self,
+        session_id: str,
+        user_input: str,
+        final_text: str,
+        current_variables: str,
+        turn_index: int,
+        curation_trigger: str,
+    ) -> dict[str, Any]:
+        """Run the memory curator sub-agent and ingest structured results.
+
+        Fail-open by design: any error is caught, logged, and the writer
+        proceeds normally. This is a Phase 2 addition — V1 paths are untouched.
+        """
+        try:
+            # Build minimal context: current turn only, no full history
+            ctx = (
+                f"## Turn {turn_index} — Curation Trigger: {curation_trigger}\n\n"
+                f"## Player Input\n{user_input[:600]}\n\n"
+                f"## Writer Output\n{final_text[:2000]}\n\n"
+                f"## Variable Changes\n{current_variables[:800]}"
+            )
+
+            from ..tools.builtin.delegate_tool import _run_sub_agent
+            raw = _run_sub_agent(
+                profile_id="rp-memory-curator",
+                task="Extract structured memories from the completed turn.",
+                context=ctx,
+                max_iterations=2,
+            )
+
+            # Detect error strings from _run_sub_agent
+            if raw.startswith("Error:") or raw.startswith("Sub-agent LLM error"):
+                return {"triggered": True, "error": raw[:200], "written": 0}
+
+            # Parse JSON output — strip markdown fences if present
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+                cleaned = re.sub(r"\s*```$", "", cleaned)
+
+            candidates = json.loads(cleaned)
+            if not isinstance(candidates, list):
+                return {"triggered": True, "error": "curator output not a JSON list", "written": 0}
+
+            # Ingest into structured memory
+            from ..memory.structured import StructuredMemoryManager
+            mgr = StructuredMemoryManager()
+            result = mgr.ingest_curator_candidates(
+                namespace=session_id,
+                candidates=candidates,
+                turn_index=turn_index,
+            )
+            result["triggered"] = True
+            return result
+
+        except json.JSONDecodeError as exc:
+            return {"triggered": True, "error": f"JSON parse: {exc}", "written": 0}
+        except Exception as exc:  # noqa: BLE001 — fail-open
+            return {"triggered": True, "error": str(exc)[:200], "written": 0}
 
 
 def _extract_action_options(text: str) -> list[str]:

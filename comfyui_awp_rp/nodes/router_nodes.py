@@ -216,6 +216,58 @@ class AWPSubAgentOrchestrator:
 
         advice_field = SubAgentOrchestrator.advice_to_packet_field(results)
 
+        # ── Phase 2: Query structured memories for context assembly (read side) ─
+        structured_mem: dict[str, Any] = {"story_facts": [], "open_threads": [], "scene_state": None}
+        try:
+            from ..memory.structured import StructuredMemoryManager
+            mgr = StructuredMemoryManager()
+            # Derive search keywords from user input (simple word overlap)
+            _raw_terms = [
+                w.strip() for w in
+                user_input.replace("，", ",").replace("。", ",").replace("？", ",").replace("？", ",").split(",")
+            ]
+            search_terms = {w for w in _raw_terms if 2 <= len(w) <= 20}
+            # If no punctuation gave terms, use the full input (bounded)
+            if not search_terms and len(user_input.strip()) <= 20:
+                search_terms = {user_input.strip()}
+            # Entity match: any entity from facts whose name appears in input
+            known_names = list(variables) if isinstance(variables, dict) else []
+            entity_ids_mentioned = [k for k in known_names if k in user_input][:5]
+
+            all_facts = mgr.query_story_facts(session_id, limit=30)
+            # Also generate 2-3 char substrings from each search term for
+            # fuzzy matching (e.g. "那件答应的事" → substrings include "答应")
+            _sub_terms: set[str] = set()
+            for t in search_terms:
+                for win in (2, 3):
+                    for i in range(len(t) - win + 1):
+                        _sub_terms.add(t[i:i + win])
+            _sub_terms.discard("")
+
+            matched_facts = [
+                f for f in all_facts
+                if any(t in (f.content or "") for t in search_terms | _sub_terms)
+                or bool(set(entity_ids_mentioned) & set(f.entity_ids or []))
+                or any(eid in user_input for eid in (f.entity_ids or []))
+            ][:5]
+            structured_mem["story_facts"] = [
+                {"summary": f.content, "tags": f.tags or [], "turn": f.metadata.get("evidence_turn", 0)}
+                for f in matched_facts
+            ]
+            structured_mem["open_threads"] = [
+                {"topic": t.content, "status": t.metadata.get("status", "open")}
+                for t in mgr.query_open_threads(session_id, status="open", limit=10)
+            ]
+            scene = mgr.get_scene_state(session_id)
+            if scene:
+                structured_mem["scene_state"] = {
+                    "location": scene.location, "time_of_day": scene.time_of_day,
+                    "characters_present": scene.characters_present,
+                    "mood": scene.mood, "narrative_summary": scene.narrative_summary,
+                }
+        except Exception:  # noqa: BLE001 — fail-open, empty structured_mem
+            pass
+
         packet = RoundContextPacket(
             context_owner="routed",
             current_scene_state=scene_state,
@@ -226,6 +278,9 @@ class AWPSubAgentOrchestrator:
             retrieved_worldbook_entries=worldbook if isinstance(worldbook, list) else [],
             subagent_advice=advice_field,
             routing_trace=decision.trace,
+            should_curate_memory=decision.should_curate_memory,
+            memory_curation_trigger=decision.memory_curation_trigger,
+            structured_memories=structured_mem,
         )
 
         advice_json = json.dumps(advice_field, ensure_ascii=False, indent=2)

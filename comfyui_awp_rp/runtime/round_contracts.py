@@ -64,6 +64,9 @@ class RoundRoutingDecision:
     worldbook_budget_tokens: int = 4000
     reasons: list[str] = field(default_factory=list)
     confidence: float = 0.7
+    # Phase 2: memory curator trigger (backward-compat defaults)
+    should_curate_memory: bool = False
+    memory_curation_trigger: str = ""
     trace: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -89,6 +92,8 @@ class RoundRoutingDecision:
             worldbook_budget_tokens=int(data.get("worldbook_budget_tokens", 4000)),
             reasons=list(data.get("reasons") or []),
             confidence=float(data.get("confidence", 0.7)),
+            should_curate_memory=bool(data.get("should_curate_memory", False)),
+            memory_curation_trigger=str(data.get("memory_curation_trigger") or ""),
             trace=dict(data.get("trace") or {}),
         )
 
@@ -112,6 +117,13 @@ class RoundContextPacket:
     retrieved_worldbook_entries: list[dict[str, Any]] = field(default_factory=list)
     subagent_advice: list[dict[str, Any]] = field(default_factory=list)
     routing_trace: dict[str, Any] = field(default_factory=dict)
+    # Phase 2: memory curator trigger
+    should_curate_memory: bool = False
+    memory_curation_trigger: str = ""
+    # Phase 2: structured memories retrieved for this round (read side)
+    structured_memories: dict[str, Any] = field(default_factory=lambda: {
+        "story_facts": [], "open_threads": [], "scene_state": None,
+    })
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -131,4 +143,9 @@ class RoundContextPacket:
             retrieved_worldbook_entries=list(data.get("retrieved_worldbook_entries") or []),
             subagent_advice=list(data.get("subagent_advice") or []),
             routing_trace=dict(data.get("routing_trace") or {}),
+            should_curate_memory=bool(data.get("should_curate_memory", False)),
+            memory_curation_trigger=str(data.get("memory_curation_trigger") or ""),
+            structured_memories=dict(data.get("structured_memories") or {
+                "story_facts": [], "open_threads": [], "scene_state": None,
+            }),
         )

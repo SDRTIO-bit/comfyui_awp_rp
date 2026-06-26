@@ -234,6 +234,43 @@ def build_round_routing_decision(
                 ))
                 reasons.append("subagent:rp-director (multi-character/scene/complexity)")
 
+    # ── Phase 2: Memory curator trigger (after V1 sub-agent routing) ──────
+    # New rules, do NOT modify V1 rp-critic / rp-director logic above.
+    CURATION_SIGNALS = (
+        "冲突", "对峙", "决裂", "重大", "决定",
+        "怨", "恨", "原谅", "信任", "背叛",
+        "秘密", "揭露", "真相", "身份",
+        "答应", "承诺", "约定", "发誓",
+        "第一次", "首次", "突然", "终于",
+    )
+
+    should_curate_memory = False
+    memory_curation_trigger = ""
+
+    hit_curation = [s for s in CURATION_SIGNALS if s in text]
+    if hit_curation:
+        should_curate_memory = True
+        memory_curation_trigger = f"signal:{','.join(hit_curation[:3])}"
+        reasons.append(f"curate-memory: {','.join(hit_curation[:3])}")
+
+    # Periodic curation every 3 turns
+    if turn_index > 0 and turn_index % 3 == 0 and not should_curate_memory:
+        should_curate_memory = True
+        memory_curation_trigger = "periodic"
+        reasons.append("curate-memory:periodic")
+
+    # Scene change triggers curation (append to existing signal)
+    if hit_scene and not should_curate_memory:
+        should_curate_memory = True
+        memory_curation_trigger = "scene-change"
+        reasons.append("curate-memory:scene-change")
+
+    trace["signals"]["curation"] = {
+        "triggered": should_curate_memory,
+        "trigger": memory_curation_trigger,
+        "hit_signals": hit_curation,
+    }
+
     should_run_continuity_check = bool(hit_rel or hit_recall)
     should_scan_npc_activity = is_multi_character
 
@@ -262,5 +299,7 @@ def build_round_routing_decision(
         worldbook_budget_tokens=worldbook_budget_tokens,
         reasons=reasons,
         confidence=round(min(confidence, 0.95), 2),
+        should_curate_memory=should_curate_memory,
+        memory_curation_trigger=memory_curation_trigger,
         trace=trace,
     )
